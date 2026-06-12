@@ -47,7 +47,7 @@ conversion. What had to change:
 | `formatDate` / `formatString` / `formatCurrency` calls | ❌ no function system | computed in Python, sent pre-formatted |
 | `checks` with custom error messages | ❌ | `TextField.validationRegexp` (same regex, default message) |
 | Conditional submit enablement (`and`/`or`/`required` checks on Button) | ❌ | agent validates the `userAction` payload and replies with what's missing |
-| `weight` (proportional columns) | ❌ not in catalog | `Row` with `distribution: "spaceBetween"` (approximate alignment) |
+| `weight` (proportional columns) | ✅ per [GE component gallery reference](https://docs.cloud.google.com/gemini/enterprise/docs/a2ui-agents/a2ui-component-gallery-reference) (common property, flex-grow-like; absent from the published v0.8 schema) | kept, at envelope level next to `id`; `spaceBetween` retained as fallback |
 | `List` + row template bound to `/assets` | ⚠️ template syntax differs | rows expanded server-side via `explicitList` (simpler + proven) |
 | Colored +/- change values | ❌ no styling control in GE | ▲/▼ arrows + sign |
 

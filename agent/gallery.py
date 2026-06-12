@@ -14,8 +14,12 @@ Composer features with no v0.8/GE equivalent, and how each is handled here:
            message and the cross-field submit-enable rule move to the agent,
            which validates the userAction payload server-side
   - `weight` (proportional column widths)
-        -> not in the v0.8 catalog; rows use distribution="spaceBetween"
-           as the closest approximation
+        -> absent from the published v0.8 schema, but GE's component gallery
+           reference documents it as a common property (flex-grow-like, in
+           Row/Column). Set at the envelope level (sibling of "id"), same
+           level as "id" per the GE docs' common-properties table. Rows keep
+           distribution="spaceBetween" as a fallback in case the renderer
+           ignores it.
   - `variant` -> `usageHint`
 """
 import uuid
@@ -28,11 +32,19 @@ def _surface(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _text(comp_id: str, text: str, usage_hint: str | None = None) -> dict:
+def _text(
+    comp_id: str,
+    text: str,
+    usage_hint: str | None = None,
+    weight: float | None = None,
+) -> dict:
     props: dict = {"text": {"literalString": text}}
     if usage_hint:
         props["usageHint"] = usage_hint
-    return {"id": comp_id, "component": {"Text": props}}
+    comp: dict = {"id": comp_id, "component": {"Text": props}}
+    if weight is not None:
+        comp["weight"] = weight
+    return comp
 
 
 # ── Registration form (from a2ui-form.json) ─────────────────────────────────
@@ -202,10 +214,10 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
                 }
             },
         },
-        _text("col_asset", "Asset", usage_hint="caption"),
-        _text("col_price", "Price", usage_hint="caption"),
-        _text("col_change", "24h Change", usage_hint="caption"),
-        _text("col_market_cap", "Market Cap", usage_hint="caption"),
+        _text("col_asset", "Asset", usage_hint="caption", weight=2),
+        _text("col_price", "Price", usage_hint="caption", weight=1),
+        _text("col_change", "24h Change", usage_hint="caption", weight=1),
+        _text("col_market_cap", "Market Cap", usage_hint="caption", weight=1.5),
         {"id": "header_divider", "component": {"Divider": {"axis": "horizontal"}}},
     ]
 
@@ -242,12 +254,13 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
                         },
                     }
                 },
+                "weight": 2,
             },
             _text(f"asset_name_{i}", f"**{asset['name']}**"),
             _text(f"asset_symbol_{i}", asset["symbol"], usage_hint="caption"),
-            _text(f"asset_price_{i}", f"${asset['price']:,.2f}"),
-            _text(f"asset_change_{i}", change_text),
-            _text(f"asset_mcap_{i}", _compact_usd(asset["marketCap"])),
+            _text(f"asset_price_{i}", f"${asset['price']:,.2f}", weight=1),
+            _text(f"asset_change_{i}", change_text, weight=1),
+            _text(f"asset_mcap_{i}", _compact_usd(asset["marketCap"]), weight=1.5),
         ]
 
     return [
