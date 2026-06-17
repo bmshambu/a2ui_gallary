@@ -9,3 +9,4 @@ python-dotenv>=1.0.0
 google-cloud-secret-manager
 google-cloud-storage
 cloudpickle
+pytest>=9.0

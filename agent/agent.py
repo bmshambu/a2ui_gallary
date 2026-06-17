@@ -90,24 +90,28 @@ def _append_gallery_parts(
                 component = match.group(1).lower()
             p.text = _MARKER_RE.sub("", p.text).rstrip()
 
-    # If this turn came from a follow-up button click, rewrite the clicked
-    # card in place to show the chosen question (mitigates GE's fixed
-    # "User action triggered." bubble). Form submits carry no `question`
-    # key, so the form card is left intact.
     user_action = extract_user_action(callback_context.user_content)
-    if user_action:
+    builder = COMPONENT_BUILDERS.get(component)
+
+    # clicked_card_replacement + component + nav = 7 DataParts, which exceeds
+    # GE's validated limit of 6 per response and causes the surfaceUpdate to
+    # bleed through as raw text. Only rewrite the clicked card when NO new
+    # component surface follows (followup-only clicks: 1 rewrite + 3 nav = 4).
+    # For component clicks the agent already echoes the question as a markdown
+    # quote, keeping the conversation readable without the card rewrite.
+    if user_action and not builder:
         question = (user_action.get("context") or {}).get("question")
         surface_id = user_action.get("surfaceId")
         if question and surface_id:
             for message in clicked_card_replacement(surface_id, question):
                 content.parts.append(to_genai_part(message))
 
-    builder = COMPONENT_BUILDERS.get(component)
+    # Component surface (3 DataParts)
     if builder:
         for message in builder():
             content.parts.append(to_genai_part(message))
 
-    # Navigation card under every response keeps the gallery self-driving
+    # Navigation card (3 DataParts) — total max = 6, within GE's validated limit
     for message in gallery_nav_messages():
         content.parts.append(to_genai_part(message))
     return llm_response
