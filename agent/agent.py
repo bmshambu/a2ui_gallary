@@ -18,7 +18,6 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_response import LlmResponse
 
 from .a2ui import (
-    clicked_card_replacement,
     extract_user_action,
     followup_messages,
     references_modal,
@@ -90,31 +89,56 @@ def _append_gallery_parts(
                 component = match.group(1).lower()
             p.text = _MARKER_RE.sub("", p.text).rstrip()
 
+    # Form submission: validate in Python — the LLM cannot reliably parse typed
+    # values out of the raw userAction JSON it receives in context.
     user_action = extract_user_action(callback_context.user_content)
+    if user_action and user_action.get("name") == "register_submitted":
+        _handle_form_submit(content, user_action.get("context") or {})
+
     builder = COMPONENT_BUILDERS.get(component)
-
-    # clicked_card_replacement + component + nav = 7 DataParts, which exceeds
-    # GE's validated limit of 6 per response and causes the surfaceUpdate to
-    # bleed through as raw text. Only rewrite the clicked card when NO new
-    # component surface follows (followup-only clicks: 1 rewrite + 3 nav = 4).
-    # For component clicks the agent already echoes the question as a markdown
-    # quote, keeping the conversation readable without the card rewrite.
-    if user_action and not builder:
-        question = (user_action.get("context") or {}).get("question")
-        surface_id = user_action.get("surfaceId")
-        if question and surface_id:
-            for message in clicked_card_replacement(surface_id, question):
-                content.parts.append(to_genai_part(message))
-
-    # Component surface (3 DataParts)
     if builder:
         for message in builder():
             content.parts.append(to_genai_part(message))
 
-    # Navigation card (3 DataParts) — total max = 6, within GE's validated limit
     for message in gallery_nav_messages():
         content.parts.append(to_genai_part(message))
     return llm_response
+
+
+def _handle_form_submit(content, ctx: dict) -> None:
+    """Validate the register_submitted userAction and overwrite the LLM text."""
+    email = str(ctx.get("email") or "").strip()
+    phone = str(ctx.get("phone") or "").strip()
+    zip_code = str(ctx.get("zip") or "").strip()
+    # agree may arrive as bool True/False or string "true"/"false"
+    agree_raw = ctx.get("agree", False)
+    agree = agree_raw is True or str(agree_raw).lower() == "true"
+
+    errors = []
+    if not agree:
+        errors.append("You must agree to the terms and conditions.")
+    if not email and not phone:
+        errors.append("Provide at least an email address or a phone number.")
+    if not zip_code:
+        errors.append("Zip code is required.")
+
+    if errors:
+        result = "**Please fix the following before submitting:**\n\n" + "\n".join(
+            f"- {e}" for e in errors
+        )
+    else:
+        lines = ["**Registration received!** ✅\n"]
+        if email:
+            lines.append(f"- Email: `{email}`")
+        if phone:
+            lines.append(f"- Phone: `{phone}`")
+        lines.append(f"- Zip: `{zip_code}`")
+        result = "\n".join(lines)
+
+    for p in content.parts:
+        if p.text:
+            p.text = result
+            break
 
 
 root_agent = LlmAgent(
@@ -149,13 +173,10 @@ root_agent = LlmAgent(
         "Start your reply with it as a markdown quote on its own line "
         "(e.g. '> Show me the registration form component'), then respond "
         "and route as above.\n"
-        "- name is 'register_submitted': the user submitted the demo form. "
-        "Validate the context values yourself: agree must be true; email "
-        "(valid format) or phone (10-15 digits) must be provided; zip must "
-        "be exactly 5 digits. If valid, confirm with a short summary of "
-        "what was received. If not, list exactly what is missing or "
-        "invalid and ask them to fix it in the form above and resubmit. "
-        "Use [[COMPONENT:followups]] either way.\n"
+        "- name is 'register_submitted': the server validates this for you "
+        "and replaces your text automatically. Just write a short neutral "
+        "acknowledgement (e.g. 'Processing your registration…') and end "
+        "with [[COMPONENT:followups]].\n"
         "\n"
         "If asked what you can show, summarize the four demos in one line "
         "each — the buttons below let them pick."

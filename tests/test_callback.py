@@ -10,10 +10,8 @@ Tests the full pipeline that runs on every model response:
 
 Run: .venv\\Scripts\\python -m pytest tests/ -v
 """
-import json
 import sys
-import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,7 +20,7 @@ sys.path.insert(0, ".")
 from google.adk.a2a.converters.part_converter import convert_genai_part_to_a2a_part
 from google.genai import types as genai_types
 
-from agent.a2ui import A2UI_MIME_TYPE, _TAG_END, _TAG_START
+from agent.a2ui import A2UI_MIME_TYPE
 from agent.agent import _MARKER_RE, _append_gallery_parts
 
 
@@ -38,21 +36,10 @@ def _make_response(text: str) -> MagicMock:
     return resp
 
 
-def _make_ctx(user_action: dict | None = None) -> MagicMock:
-    """Fake CallbackContext, optionally carrying a userAction blob."""
+def _make_ctx() -> MagicMock:
+    """Fake CallbackContext with no user content."""
     ctx = MagicMock()
-    if user_action is None:
-        ctx.user_content = None
-    else:
-        blob = json.dumps({"data": {"userAction": user_action}})
-        part = genai_types.Part(
-            inline_data=genai_types.Blob(
-                mime_type="text/plain",
-                data=_TAG_START + blob.encode() + _TAG_END,
-            )
-        )
-        content = genai_types.Content(parts=[part], role="user")
-        ctx.user_content = content
+    ctx.user_content = None
     return ctx
 
 
@@ -193,66 +180,6 @@ class TestSurfaceIdFreshness:
             assert len(ids_in_trio) == 1, f"surfaceId inconsistent in trio {i//3}"
 
 
-# ── click handling ────────────────────────────────────────────────────────────
-
-class TestButtonClickHandling:
-    def test_followup_click_without_component_rewrites_card(self):
-        # Click on a followup button that routes to [[COMPONENT:followups]] (no
-        # builder) — card rewrite IS emitted because total stays ≤ 6 DataParts.
-        surface_id = f"followup-buttons-{uuid.uuid4().hex[:12]}"
-        ua = {
-            "name": "followup_question",
-            "surfaceId": surface_id,
-            "sourceComponentId": "btn_0",
-            "timestamp": "2026-06-17T10:00:00Z",
-            "context": {"question": "Show me the follow-up buttons component"},
-        }
-        resp = _make_response("> Show me the follow-up buttons component\nHere it is.\n[[COMPONENT:followups]]")
-        _append_gallery_parts(_make_ctx(user_action=ua), resp)
-        parts = _a2ui_parts(resp)
-
-        rewrite = next(
-            (p for p in parts if "surfaceUpdate" in p
-             and p["surfaceUpdate"]["surfaceId"] == surface_id),
-            None,
-        )
-        assert rewrite is not None, "clicked card not rewritten for followup-only click"
-        comps = rewrite["surfaceUpdate"]["components"]
-        assert len(comps) == 1
-        assert "Text" in comps[0]["component"]
-
-    def test_followup_click_with_component_skips_rewrite(self):
-        # Click on a button that shows a component (table) — card rewrite is
-        # SKIPPED to keep DataPart count at 6 (component 3 + nav 3), avoiding
-        # the GE raw-JSON bleed caused by 7 DataParts in one response.
-        surface_id = f"followup-buttons-{uuid.uuid4().hex[:12]}"
-        ua = {
-            "name": "followup_question",
-            "surfaceId": surface_id,
-            "sourceComponentId": "btn_1",
-            "timestamp": "2026-06-17T10:00:00Z",
-            "context": {"question": "Show me the financial data table component"},
-        }
-        resp = _make_response("> Show me the financial data table component\nHere it is.\n[[COMPONENT:table]]")
-        _append_gallery_parts(_make_ctx(user_action=ua), resp)
-        parts = _a2ui_parts(resp)
-
-        # No rewrite DataPart targeting the old surfaceId
-        rewrite = next(
-            (p for p in parts if "surfaceUpdate" in p
-             and p["surfaceUpdate"]["surfaceId"] == surface_id),
-            None,
-        )
-        assert rewrite is None, "card rewrite must not fire when component follows (would exceed 6 DataParts)"
-        # Still exactly 6 DataParts: table (3) + nav (3)
-        assert len(parts) == 6
-
-    def test_no_click_no_rewrite(self):
-        resp = _make_response("Intro.\n[[COMPONENT:form]]")
-        _append_gallery_parts(_make_ctx(user_action=None), resp)
-        parts = _a2ui_parts(resp)
-        all_ids = {next(iter(p.values()))["surfaceId"] for p in parts}
-        assert all("reg-form" in sid or "followup-buttons" in sid for sid in all_ids)
 
 
 # ── DataPart mimeType ─────────────────────────────────────────────────────────
@@ -274,32 +201,65 @@ class TestDataPartMimeType:
 
 # ── form submit validation ────────────────────────────────────────────────────
 
-class TestFormSubmitValidation:
-    """The agent validates register_submitted userAction server-side.
-    These tests verify the callback routes correctly (uses followups marker)
-    and does NOT emit a form component on submit.
-    """
+import json
 
-    def _submit(self, ctx_data: dict) -> list[dict]:
-        ua = {"name": "register_submitted", "surfaceId": "reg-form-abc", "context": ctx_data}
-        # Simulate the LLM output for a valid/invalid submit (no component marker
-        # for submit — it uses [[COMPONENT:followups]])
+
+def _make_submit_ctx(ctx_data: dict) -> MagicMock:
+    """Fake CallbackContext carrying a register_submitted userAction."""
+    ua_json = json.dumps({"userAction": {
+        "name": "register_submitted",
+        "context": ctx_data,
+    }})
+    part = genai_types.Part(text=ua_json)
+    content = genai_types.Content(parts=[part], role="user")
+    ctx = MagicMock()
+    ctx.user_content = content
+    return ctx
+
+
+class TestFormSubmitValidation:
+    """Python-side validation replaces the LLM text on register_submitted."""
+
+    def _submit(self, ctx_data: dict):
         resp = _make_response("Thank you for registering!\n[[COMPONENT:followups]]")
-        _append_gallery_parts(_make_ctx(user_action=ua), resp)
-        return _a2ui_parts(resp)
+        ctx = _make_submit_ctx(ctx_data)
+        _append_gallery_parts(ctx, resp)
+        return resp
+
+    def test_valid_submit_text_shows_confirmation(self):
+        resp = self._submit({"email": "a@b.com", "phone": "", "zip": "12345", "agree": True})
+        text = resp.content.parts[0].text
+        assert "Registration received" in text
+        assert "a@b.com" in text
 
     def test_valid_submit_emits_nav_only(self):
-        parts = self._submit({"email": "a@b.com", "phone": "", "zip": "12345", "agree": True})
+        resp = self._submit({"email": "a@b.com", "phone": "", "zip": "12345", "agree": True})
+        parts = _a2ui_parts(resp)
         surface_updates = [p for p in parts if "surfaceUpdate" in p]
-        # Only nav card (no form re-emitted)
-        assert len(surface_updates) == 1
+        assert len(surface_updates) == 1  # only nav card
+
+    def test_missing_agree_reports_error(self):
+        resp = self._submit({"email": "a@b.com", "phone": "", "zip": "12345", "agree": False})
+        text = resp.content.parts[0].text
+        assert "terms" in text.lower()
+
+    def test_missing_contact_and_zip_reports_errors(self):
+        resp = self._submit({"email": "", "phone": "", "zip": "", "agree": True})
+        text = resp.content.parts[0].text
+        assert "email" in text.lower() or "phone" in text.lower()
+        assert "zip" in text.lower()
+
+    def test_agree_as_string_true_accepted(self):
+        # GE may send boolean context values as strings
+        resp = self._submit({"email": "x@y.com", "phone": "", "zip": "99999", "agree": "true"})
+        text = resp.content.parts[0].text
+        assert "Registration received" in text
 
     def test_invalid_submit_no_form_re_emitted(self):
-        # Even on invalid submit, the agent replies with text + nav — no form component
-        parts = self._submit({"email": "", "phone": "", "zip": "", "agree": False})
+        resp = self._submit({"email": "", "phone": "", "zip": "", "agree": False})
         all_ids = [
             c["id"]
-            for su in parts if "surfaceUpdate" in su
+            for su in _a2ui_parts(resp) if "surfaceUpdate" in su
             for c in su["surfaceUpdate"]["components"]
         ]
         assert "email_field" not in all_ids
