@@ -102,9 +102,9 @@ def registration_form_messages() -> list[dict]:
             },
         },
         _text("welcome_text", greeting, usage_hint="h3"),
-        _text_field("email_field", "Email Address", "/formData/email", EMAIL_REGEX),
-        _text_field("phone_field", "Phone Number", "/formData/phone", PHONE_REGEX),
-        _text_field("zip_field", "Zip Code", "/formData/zip", ZIP_REGEX),
+        _text_field("email_field", "Email Address", "/email", EMAIL_REGEX),
+        _text_field("phone_field", "Phone Number", "/phone", PHONE_REGEX),
+        _text_field("zip_field", "Zip Code", "/zip", ZIP_REGEX),
         {
             "id": "terms_checkbox",
             "component": {
@@ -112,7 +112,7 @@ def registration_form_messages() -> list[dict]:
                     "label": {
                         "literalString": "I agree to the terms and conditions"
                     },
-                    "value": {"path": "/formData/agree"},
+                    "value": {"path": "/agree"},
                 }
             },
         },
@@ -125,10 +125,10 @@ def registration_form_messages() -> list[dict]:
                     "action": {
                         "name": FORM_ACTION_NAME,
                         "context": [
-                            {"key": "email", "value": {"path": "/formData/email"}},
-                            {"key": "phone", "value": {"path": "/formData/phone"}},
-                            {"key": "zip", "value": {"path": "/formData/zip"}},
-                            {"key": "agree", "value": {"path": "/formData/agree"}},
+                            {"key": "email", "value": {"path": "/email"}},
+                            {"key": "phone", "value": {"path": "/phone"}},
+                            {"key": "zip", "value": {"path": "/zip"}},
+                            {"key": "agree", "value": {"path": "/agree"}},
                         ],
                     },
                 }
@@ -137,18 +137,19 @@ def registration_form_messages() -> list[dict]:
         _text("submit_btn_label", "Submit Registration"),
     ]
 
+    # Flat, single-segment data-model paths: GE writes TextField/CheckBox edits
+    # back only to top-level keys, not into a nested object — binding into
+    # /formData/email silently dropped the typed values (context came back empty).
     return [
         {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
         {
             "dataModelUpdate": {
                 "surfaceId": surface_id,
                 "contents": {
-                    "formData": {
-                        "email": "",
-                        "phone": "",
-                        "zip": "",
-                        "agree": False,
-                    }
+                    "email": "",
+                    "phone": "",
+                    "zip": "",
+                    "agree": False,
                 },
             }
         },
