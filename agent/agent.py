@@ -178,7 +178,7 @@ def _append_gallery_parts(
     # values out of the raw userAction JSON it receives in context.
     user_action = extract_user_action(_current_user_content(callback_context))
     if user_action and user_action.get("name") == "register_submitted":
-        _handle_form_submit(content, user_action.get("context") or {})
+        _handle_form_submit(content, user_action.get("context") or {}, user_action)
 
     builder = COMPONENT_BUILDERS.get(component)
     if builder:
@@ -191,7 +191,7 @@ def _append_gallery_parts(
     return llm_response
 
 
-def _handle_form_submit(content, ctx) -> None:
+def _handle_form_submit(content, ctx, raw_action=None) -> None:
     """Validate the register_submitted userAction and overwrite the LLM text."""
     # GE may return context as a list [{key, value}, ...] or a flat dict
     if isinstance(ctx, list):
@@ -224,13 +224,14 @@ def _handle_form_submit(content, ctx) -> None:
         lines.append(f"- Zip: `{zip_code}`")
         result = "\n".join(lines)
 
-    # TEMP DIAGNOSTIC: surface exactly what GE sent so we can confirm whether
-    # the TextField/CheckBox values are reaching the action context. Remove
-    # once form binding is confirmed working in GE.
-    result += (
-        f"\n\n<sub>debug — received: email={email!r}, phone={phone!r}, "
-        f"zip={zip_code!r}, agree={agree_raw!r}</sub>"
-    )
+    # TEMP DIAGNOSTIC: dump the FULL raw userAction GE sent so we can see the
+    # real shape of `context` (dict vs list, where the typed values live).
+    # Remove once form binding is confirmed working in GE.
+    try:
+        raw_dump = json.dumps(raw_action, ensure_ascii=False)
+    except (TypeError, ValueError):
+        raw_dump = repr(raw_action)
+    result += f"\n\n<sub>debug raw userAction: {raw_dump}</sub>"
 
     for p in content.parts:
         if p.text:
