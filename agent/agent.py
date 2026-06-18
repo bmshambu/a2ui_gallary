@@ -11,10 +11,12 @@ Adding a new gallery component:
   2. Register it in COMPONENT_BUILDERS below
   3. Mention its trigger phrases + marker in the instruction
 """
+import json
 import re
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
 from .a2ui import (
@@ -26,6 +28,66 @@ from .a2ui import (
 from .gallery import data_table_messages, registration_form_messages
 
 _MARKER_RE = re.compile(r"\[\[COMPONENT:(\w+)\]\]")
+
+# Defensive scrub: if the model ever echoes raw A2UI payload into its text,
+# strip it so it never reaches the chat bubble.
+_ECHO_RE = re.compile(
+    r"<a2a_datapart_json>.*?</a2a_datapart_json>"
+    r'|\{\s*"(?:surfaceUpdate|dataModelUpdate|beginRendering|kind)"\s*:.*',
+    re.DOTALL,
+)
+
+# A2UI component messages we emit; if the model sees these in history it tends
+# to parrot the raw JSON back into its text, which then bleeds into GE chat.
+_A2UI_COMPONENT_KEYS = ("surfaceUpdate", "dataModelUpdate", "beginRendering")
+_A2A_TAG_START = b"<a2a_datapart_json>"
+_A2A_TAG_END = b"</a2a_datapart_json>"
+
+
+def _is_a2ui_component_part(part) -> bool:
+    """True if this part is an A2UI component DataPart blob (not a userAction).
+
+    Both outgoing component messages and incoming clicks use the same
+    <a2a_datapart_json> wrapper; peek inside so we strip only the component
+    payloads (the echo source) and keep userAction events the model needs.
+    """
+    blob = getattr(part, "inline_data", None)
+    if blob and blob.data and blob.data.startswith(_A2A_TAG_START):
+        try:
+            raw = blob.data[len(_A2A_TAG_START):-len(_A2A_TAG_END)]
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            return False
+        inner = data.get("data", data)
+        if isinstance(inner, dict) and any(k in inner for k in _A2UI_COMPONENT_KEYS):
+            return True
+        return False
+    # A prior turn where the model already echoed raw JSON as text
+    if part.text and (
+        "<a2a_datapart_json>" in part.text
+        or any(f'"{k}"' in part.text for k in _A2UI_COMPONENT_KEYS)
+    ):
+        return True
+    return False
+
+
+def _strip_a2ui_from_history(
+    callback_context: CallbackContext,
+    llm_request: LlmRequest,
+) -> LlmResponse | None:
+    """Remove A2UI component payloads from the history before the model runs.
+
+    Prevents the model from reproducing the raw component JSON in its text as
+    the conversation grows (the cause of JSON bleeding into chat after a few
+    turns). userAction blobs are kept so clicks are still understood.
+    """
+    for cnt in llm_request.contents:
+        if not cnt.parts:
+            continue
+        kept = [p for p in cnt.parts if not _is_a2ui_component_part(p)]
+        if len(kept) != len(cnt.parts):
+            cnt.parts = kept
+    return None
 
 # A2UI/ADK reading list for the references-modal demo
 GALLERY_REFERENCES = [
@@ -109,7 +171,8 @@ def _append_gallery_parts(
             match = _MARKER_RE.search(p.text)
             if match:
                 component = match.group(1).lower()
-            p.text = _MARKER_RE.sub("", p.text).rstrip()
+            p.text = _MARKER_RE.sub("", p.text)
+            p.text = _ECHO_RE.sub("", p.text).rstrip()
 
     # Form submission: validate in Python — the LLM cannot reliably parse typed
     # values out of the raw userAction JSON it receives in context.
@@ -161,6 +224,14 @@ def _handle_form_submit(content, ctx) -> None:
         lines.append(f"- Zip: `{zip_code}`")
         result = "\n".join(lines)
 
+    # TEMP DIAGNOSTIC: surface exactly what GE sent so we can confirm whether
+    # the TextField/CheckBox values are reaching the action context. Remove
+    # once form binding is confirmed working in GE.
+    result += (
+        f"\n\n<sub>debug — received: email={email!r}, phone={phone!r}, "
+        f"zip={zip_code!r}, agree={agree_raw!r}</sub>"
+    )
+
     for p in content.parts:
         if p.text:
             p.text = result
@@ -208,5 +279,6 @@ root_agent = LlmAgent(
         "If asked what you can show, summarize the four demos in one line "
         "each — the buttons below let them pick."
     ),
+    before_model_callback=_strip_a2ui_from_history,
     after_model_callback=_append_gallery_parts,
 )

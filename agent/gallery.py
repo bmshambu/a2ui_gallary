@@ -183,6 +183,10 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
     assets = assets if assets is not None else DEMO_ASSETS
     surface_id = _surface("data-grid")
 
+    # NOTE: `weight` is intentionally omitted. It is documented in GE's
+    # component-gallery reference but NOT verified to render in GE chat; when
+    # present on this (large) surface GE rejected the payload and bled raw
+    # JSON into the conversation. Column widths rely on distribution instead.
     row_ids = [f"asset_row_{i}" for i in range(len(assets))]
     components = [
         {"id": "root", "component": {"Card": {"child": "main_column"}}},
@@ -214,17 +218,18 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
                 }
             },
         },
-        _text("col_asset", "Asset", usage_hint="caption", weight=2),
-        _text("col_price", "Price", usage_hint="caption", weight=1),
-        _text("col_change", "24h Change", usage_hint="caption", weight=1),
-        _text("col_market_cap", "Market Cap", usage_hint="caption", weight=1.5),
+        _text("col_asset", "Asset", usage_hint="caption"),
+        _text("col_price", "Price", usage_hint="caption"),
+        _text("col_change", "24h Change", usage_hint="caption"),
+        _text("col_market_cap", "Market Cap", usage_hint="caption"),
         {"id": "header_divider", "component": {"Divider": {"axis": "horizontal"}}},
     ]
 
     for i, asset in enumerate(assets):
         change = asset["change"]
-        # Markdown bold for name; arrows stand in for the green/red coloring
-        # the Composer preview had (no color control in GE).
+        # Arrows stand in for the green/red coloring the Composer preview had
+        # (no color control in GE). Name + symbol merged into one markdown
+        # Text to keep the payload small (large table surfaces bleed raw JSON).
         change_text = f"{'▲' if change >= 0 else '▼'} {change:+.1f}%"
         components += [
             {
@@ -244,23 +249,10 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
                     }
                 },
             },
-            {
-                "id": f"asset_info_{i}",
-                "component": {
-                    "Column": {
-                        "alignment": "start",
-                        "children": {
-                            "explicitList": [f"asset_name_{i}", f"asset_symbol_{i}"]
-                        },
-                    }
-                },
-                "weight": 2,
-            },
-            _text(f"asset_name_{i}", f"**{asset['name']}**"),
-            _text(f"asset_symbol_{i}", asset["symbol"], usage_hint="caption"),
-            _text(f"asset_price_{i}", f"${asset['price']:,.2f}", weight=1),
-            _text(f"asset_change_{i}", change_text, weight=1),
-            _text(f"asset_mcap_{i}", _compact_usd(asset["marketCap"]), weight=1.5),
+            _text(f"asset_info_{i}", f"**{asset['name']}** · {asset['symbol']}"),
+            _text(f"asset_price_{i}", f"${asset['price']:,.2f}"),
+            _text(f"asset_change_{i}", change_text),
+            _text(f"asset_mcap_{i}", _compact_usd(asset["marketCap"])),
         ]
 
     return [
