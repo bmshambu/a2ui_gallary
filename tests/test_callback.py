@@ -320,3 +320,71 @@ class TestFormSubmitValidation:
             for c in su["surfaceUpdate"]["components"]
         ]
         assert "email_field" not in all_ids
+
+
+# ── clicked-card rewrite (follow-up click readability) ─────────────────────────
+
+def _make_click_ctx(question: str, surface_id: str = "followup-buttons-abc") -> MagicMock:
+    """Fake CallbackContext carrying a followup_question userAction."""
+    ua_json = json.dumps({"userAction": {
+        "name": "followup_question",
+        "surfaceId": surface_id,
+        "context": {"question": question},
+    }})
+    part = genai_types.Part(text=ua_json)
+    content = genai_types.Content(parts=[part], role="user")
+    ctx = MagicMock()
+    ctx.user_content = content
+    return ctx
+
+
+class TestClickedCardRewrite:
+    def test_clicked_surface_rewritten_to_question(self):
+        resp = _make_response("Here's the form.\n[[COMPONENT:form]]")
+        _append_gallery_parts(
+            _make_click_ctx("Show me the registration form component", "followup-xyz"),
+            resp,
+        )
+        parts = _a2ui_parts(resp)
+        # find the surfaceUpdate targeting the clicked surface
+        rewrite = [
+            p for p in parts
+            if "surfaceUpdate" in p and p["surfaceUpdate"]["surfaceId"] == "followup-xyz"
+        ]
+        assert len(rewrite) == 1
+        comps = rewrite[0]["surfaceUpdate"]["components"]
+        # collapsed to a single Text showing the question, no buttons
+        assert len(comps) == 1
+        assert "Show me the registration form component" in str(comps[0])
+
+    def test_click_emits_component_plus_rewrite(self):
+        # form (3) + clicked-card rewrite (1) = 4 DataParts, under GE's limit
+        resp = _make_response("Here's the form.\n[[COMPONENT:form]]")
+        _append_gallery_parts(_make_click_ctx("Show me the form", "s1"), resp)
+        assert len(_a2ui_parts(resp)) == 4
+
+    def test_no_rewrite_without_surface_id(self):
+        # plain text turn (no click) → no rewrite, just the nav card (3 parts)
+        resp = _make_response("Hello!\n[[COMPONENT:followups]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        assert len(_a2ui_parts(resp)) == 3
+
+    def test_form_submit_not_rewritten(self):
+        # register_submitted goes through validation, not the card-rewrite path
+        ua_json = json.dumps({"userAction": {
+            "name": "register_submitted",
+            "surfaceId": "reg-form-1",
+            "context": {"email": "a@b.com", "phone": "", "zip": "12345", "agree": True},
+        }})
+        part = genai_types.Part(text=ua_json)
+        ctx = MagicMock()
+        ctx.user_content = genai_types.Content(parts=[part], role="user")
+        resp = _make_response("ack\n[[COMPONENT:followups]]")
+        _append_gallery_parts(ctx, resp)
+        assert resp.content.parts[0].text.startswith("**Registration received")
+        # no surfaceUpdate aimed at the form surface
+        parts = _a2ui_parts(resp)
+        assert not [
+            p for p in parts
+            if "surfaceUpdate" in p and p["surfaceUpdate"]["surfaceId"] == "reg-form-1"
+        ]

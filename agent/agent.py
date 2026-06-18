@@ -20,6 +20,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
 from .a2ui import (
+    clicked_card_replacement,
     extract_user_action,
     followup_messages,
     references_modal,
@@ -174,11 +175,24 @@ def _append_gallery_parts(
             p.text = _MARKER_RE.sub("", p.text)
             p.text = _ECHO_RE.sub("", p.text).rstrip()
 
-    # Form submission: validate in Python — the LLM cannot reliably parse typed
-    # values out of the raw userAction JSON it receives in context.
+    # Button clicks: GE always shows a fixed "User action triggered." bubble and
+    # gives us no way to add a user-role message. We make the transcript readable
+    # by handling the click deterministically here instead of trusting the LLM.
+    card_rewrite = None  # (surfaceId, question) of a clicked button card to collapse
     user_action = extract_user_action(_current_user_content(callback_context))
-    if user_action and user_action.get("name") == "register_submitted":
-        _handle_form_submit(content, user_action.get("context") or {}, user_action)
+    if user_action:
+        ctx = user_action.get("context") or {}
+        if isinstance(ctx, list):
+            ctx = {item["key"]: item.get("value") for item in ctx if "key" in item}
+        if user_action.get("name") == "register_submitted":
+            _handle_form_submit(content, ctx)
+        else:
+            # Rewrite the clicked button card in place to show the chosen
+            # question and drop its (now stale) buttons.
+            question = ctx.get("question")
+            surface_id = user_action.get("surfaceId")
+            if question and surface_id:
+                card_rewrite = (surface_id, str(question))
 
     builder = COMPONENT_BUILDERS.get(component)
     if builder:
@@ -188,10 +202,14 @@ def _append_gallery_parts(
         # No component selected — show the nav card (followups, "menu", plain chat)
         for message in gallery_nav_messages():
             content.parts.append(to_genai_part(message))
+
+    if card_rewrite:
+        for message in clicked_card_replacement(*card_rewrite):
+            content.parts.append(to_genai_part(message))
     return llm_response
 
 
-def _handle_form_submit(content, ctx, raw_action=None) -> None:
+def _handle_form_submit(content, ctx) -> None:
     """Validate the register_submitted userAction and overwrite the LLM text."""
     # GE may return context as a list [{key, value}, ...] or a flat dict
     if isinstance(ctx, list):
@@ -223,15 +241,6 @@ def _handle_form_submit(content, ctx, raw_action=None) -> None:
             lines.append(f"- Phone: `{phone}`")
         lines.append(f"- Zip: `{zip_code}`")
         result = "\n".join(lines)
-
-    # TEMP DIAGNOSTIC: dump the FULL raw userAction GE sent so we can see the
-    # real shape of `context` (dict vs list, where the typed values live).
-    # Remove once form binding is confirmed working in GE.
-    try:
-        raw_dump = json.dumps(raw_action, ensure_ascii=False)
-    except (TypeError, ValueError):
-        raw_dump = repr(raw_action)
-    result += f"\n\n<sub>debug raw userAction: {raw_dump}</sub>"
 
     for p in content.parts:
         if p.text:
@@ -268,10 +277,10 @@ root_agent = LlmAgent(
         "\n"
         "BUTTON CLICKS — if the user message contains a JSON userAction "
         "event:\n"
-        "- context has 'question': treat that text as the user's message. "
-        "Start your reply with it as a markdown quote on its own line "
-        "(e.g. '> Show me the registration form component'), then respond "
-        "and route as above.\n"
+        "- context has 'question': treat that text as the user's message and "
+        "respond to it, routing as above. Do NOT echo or quote the question "
+        "yourself — the server shows the chosen question in the clicked card "
+        "automatically.\n"
         "- name is 'register_submitted': the server validates this for you "
         "and replaces your text automatically. Just write a short neutral "
         "acknowledgement (e.g. 'Processing your registration…') and end "
