@@ -37,9 +37,10 @@ def _make_response(text: str) -> MagicMock:
 
 
 def _make_ctx() -> MagicMock:
-    """Fake CallbackContext with no user content."""
+    """Fake CallbackContext with no user action (non-button turns)."""
     ctx = MagicMock()
-    ctx.user_content = None
+    ctx.user_content = None            # not set by a plugin
+    ctx.session.events = []            # empty history → no userAction
     return ctx
 
 
@@ -98,15 +99,9 @@ class TestComponentRouting:
 
     def test_form_marker_emits_form(self):
         parts = self._run("form")
-        # form surfaceUpdate + nav surfaceUpdate = 2 surfaceUpdates minimum
         surface_updates = [p for p in parts if "surfaceUpdate" in p]
-        assert len(surface_updates) >= 2
-        # form has a CheckBox (terms) — find it
-        all_ids = [
-            c["id"]
-            for su in surface_updates
-            for c in su["surfaceUpdate"]["components"]
-        ]
+        assert len(surface_updates) == 1
+        all_ids = [c["id"] for c in surface_updates[0]["surfaceUpdate"]["components"]]
         assert "terms_checkbox" in all_ids
 
     def test_table_marker_emits_table(self):
@@ -138,20 +133,24 @@ class TestComponentRouting:
         assert len(surface_updates) == 1
 
     def test_three_message_sequence_per_component(self):
-        # form (3) + nav (3) = 6 DataParts total
+        # Option B: component only, no nav card appended — exactly 3 DataParts
         parts = self._run("form")
-        assert len(parts) == 6
+        assert len(parts) == 3
 
-    def test_nav_card_always_appended(self):
-        for marker in ["form", "table", "references", "followups"]:
+    def test_nav_card_on_followups_only(self):
+        # Nav card appears only for [[COMPONENT:followups]], not for other components
+        followup_parts = self._run("followups")
+        btn_ids = [
+            c["id"]
+            for su in followup_parts if "surfaceUpdate" in su
+            for c in su["surfaceUpdate"]["components"]
+            if "btn_" in c["id"] and "_label" not in c["id"]
+        ]
+        assert len(btn_ids) >= 4, "nav buttons missing for [[COMPONENT:followups]]"
+
+        for marker in ["form", "table", "references"]:
             parts = self._run(marker)
-            btn_ids = [
-                c["id"]
-                for su in parts if "surfaceUpdate" in su
-                for c in su["surfaceUpdate"]["components"]
-                if "btn_" in c["id"] and "_label" not in c["id"]
-            ]
-            assert len(btn_ids) >= 4, f"nav buttons missing for [[COMPONENT:{marker}]]"
+            assert len(parts) == 3, f"[[COMPONENT:{marker}]] should emit exactly 3 DataParts"
 
 
 # ── surfaceId freshness ───────────────────────────────────────────────────────
@@ -189,7 +188,7 @@ class TestDataPartMimeType:
         resp = _make_response("Test.\n[[COMPONENT:table]]")
         _append_gallery_parts(_make_ctx(), resp)
         a2ui = _a2ui_parts(resp)
-        assert len(a2ui) == 6  # table (3) + nav (3)
+        assert len(a2ui) == 3  # table only (Option B: no nav card with components)
 
     def test_text_part_not_converted_to_datapart(self):
         resp = _make_response("Hello.\n[[COMPONENT:followups]]")

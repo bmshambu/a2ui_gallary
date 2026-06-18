@@ -64,6 +64,28 @@ COMPONENT_BUILDERS = {
 }
 
 
+def _current_user_content(callback_context):
+    """Return the current turn's user Content from the callback context.
+
+    InvocationContext.user_content is only populated when a plugin modifies the
+    incoming message; in normal usage it stays None. The reliable source is the
+    last 'user' event in the session history, which is always appended before
+    the model is called.
+    """
+    # Prefer the explicit attribute (works in tests and plugin-modified flows)
+    uc = getattr(callback_context, "user_content", None)
+    if uc is not None:
+        return uc
+    # Fall back to the session events
+    try:
+        for event in reversed(callback_context.session.events):
+            if getattr(event, "author", None) == "user" and event.content:
+                return event.content
+    except Exception:
+        pass
+    return None
+
+
 def _append_gallery_parts(
     callback_context: CallbackContext,
     llm_response: LlmResponse,
@@ -91,7 +113,7 @@ def _append_gallery_parts(
 
     # Form submission: validate in Python — the LLM cannot reliably parse typed
     # values out of the raw userAction JSON it receives in context.
-    user_action = extract_user_action(callback_context.user_content)
+    user_action = extract_user_action(_current_user_content(callback_context))
     if user_action and user_action.get("name") == "register_submitted":
         _handle_form_submit(content, user_action.get("context") or {})
 
@@ -99,14 +121,18 @@ def _append_gallery_parts(
     if builder:
         for message in builder():
             content.parts.append(to_genai_part(message))
-
-    for message in gallery_nav_messages():
-        content.parts.append(to_genai_part(message))
+    else:
+        # No component selected — show the nav card (followups, "menu", plain chat)
+        for message in gallery_nav_messages():
+            content.parts.append(to_genai_part(message))
     return llm_response
 
 
-def _handle_form_submit(content, ctx: dict) -> None:
+def _handle_form_submit(content, ctx) -> None:
     """Validate the register_submitted userAction and overwrite the LLM text."""
+    # GE may return context as a list [{key, value}, ...] or a flat dict
+    if isinstance(ctx, list):
+        ctx = {item["key"]: item.get("value") for item in ctx if "key" in item}
     email = str(ctx.get("email") or "").strip()
     phone = str(ctx.get("phone") or "").strip()
     zip_code = str(ctx.get("zip") or "").strip()
@@ -160,7 +186,8 @@ root_agent = LlmAgent(
         "  [[COMPONENT:references]] — user asks for references, sources, "
         "citations, links, or documentation\n"
         "  [[COMPONENT:followups]] — anything else: greetings, questions "
-        "about the gallery or A2UI, or the follow-up-buttons demo itself\n"
+        "about the gallery or A2UI, the follow-up-buttons demo itself, or "
+        "when the user says 'menu', 'back', 'home', or 'navigation'\n"
         "\n"
         "When showing a component, write 1-3 sentences: what the component "
         "is and what GE capability it demonstrates (e.g. the form shows "
