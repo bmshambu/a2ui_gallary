@@ -352,6 +352,22 @@ class TestQuestionEcho:
         _append_gallery_parts(_make_ctx(), resp)
         assert not resp.content.parts[0].text.startswith(">")
 
+    def test_click_routes_by_button_map_not_llm_marker(self):
+        # LLM emits the WRONG marker (followups), but the click question is the
+        # table button → the table must render, not the nav card.
+        resp = _make_response("Here's the data.\n[[COMPONENT:followups]]")
+        _append_gallery_parts(
+            _make_click_ctx("Show me the financial data table component"), resp
+        )
+        all_ids = [
+            c["id"]
+            for su in _a2ui_parts(resp) if "surfaceUpdate" in su
+            for c in su["surfaceUpdate"]["components"]
+        ]
+        assert "header_row" in all_ids  # table rendered
+        # nav buttons should NOT be present
+        assert not any(i.startswith("btn_") for i in all_ids)
+
     def test_form_submit_not_quoted(self):
         # register_submitted goes through validation, not the quote path
         ua_json = json.dumps({"userAction": {

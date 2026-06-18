@@ -104,16 +104,24 @@ GALLERY_REFERENCES = [
 ]
 
 
+# Nav buttons: (label, question reported on click, target component marker).
+# The question→component map lets us route a click deterministically instead of
+# relying on the LLM to emit the right [[COMPONENT:...]] marker (it doesn't,
+# reliably — that caused table/form clicks to fall through to the nav card).
+_NAV_BUTTONS = [
+    ("📝 Form with validation", "Show me the registration form component", "form"),
+    ("📊 Data table", "Show me the financial data table component", "table"),
+    ("📚 References modal", "Show me the references component", "references"),
+    ("💬 Follow-up buttons", "Show me the follow-up buttons component", "followups"),
+]
+_QUESTION_TO_COMPONENT = {question: comp for _, question, comp in _NAV_BUTTONS}
+
+
 def gallery_nav_messages() -> list[dict]:
     """The gallery's navigation card — also serves as the follow-up demo."""
     return followup_messages(
         prompt="Which A2UI component would you like to see?",
-        buttons=[
-            {"label": "📝 Form with validation", "action": "Show me the registration form component"},
-            {"label": "📊 Data table", "action": "Show me the financial data table component"},
-            {"label": "📚 References modal", "action": "Show me the references component"},
-            {"label": "💬 Follow-up buttons", "action": "Show me the follow-up buttons component"},
-        ],
+        buttons=[{"label": label, "action": q} for label, q, _ in _NAV_BUTTONS],
     )
 
 
@@ -192,6 +200,12 @@ def _append_gallery_parts(
             question = ctx.get("question")
             if question:
                 _prepend_quote(content, str(question))
+                # Route the click by the known button mapping, not the LLM
+                # marker — the model often omits/mangles it on clicks, which
+                # made component requests fall through to the nav card.
+                mapped = _QUESTION_TO_COMPONENT.get(str(question))
+                if mapped is not None:
+                    component = mapped
 
     builder = COMPONENT_BUILDERS.get(component)
     if builder:
