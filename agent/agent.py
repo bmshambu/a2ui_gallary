@@ -20,7 +20,6 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
 from .a2ui import (
-    clicked_card_replacement,
     extract_user_action,
     followup_messages,
     references_modal,
@@ -178,7 +177,6 @@ def _append_gallery_parts(
     # Button clicks: GE always shows a fixed "User action triggered." bubble and
     # gives us no way to add a user-role message. We make the transcript readable
     # by handling the click deterministically here instead of trusting the LLM.
-    card_rewrite = None  # (surfaceId, question) of a clicked button card to collapse
     user_action = extract_user_action(_current_user_content(callback_context))
     if user_action:
         ctx = user_action.get("context") or {}
@@ -187,12 +185,13 @@ def _append_gallery_parts(
         if user_action.get("name") == "register_submitted":
             _handle_form_submit(content, ctx)
         else:
-            # Rewrite the clicked button card in place to show the chosen
-            # question and drop its (now stale) buttons.
+            # Echo the chosen question as a quote above the reply, so the bubble
+            # reads "> Show me the … component" instead of just the component.
+            # (Rewriting the clicked card in place via a surfaceUpdate to its
+            # surfaceId was unreliable in GE — it only landed sometimes.)
             question = ctx.get("question")
-            surface_id = user_action.get("surfaceId")
-            if question and surface_id:
-                card_rewrite = (surface_id, str(question))
+            if question:
+                _prepend_quote(content, str(question))
 
     builder = COMPONENT_BUILDERS.get(component)
     if builder:
@@ -202,11 +201,20 @@ def _append_gallery_parts(
         # No component selected — show the nav card (followups, "menu", plain chat)
         for message in gallery_nav_messages():
             content.parts.append(to_genai_part(message))
-
-    if card_rewrite:
-        for message in clicked_card_replacement(*card_rewrite):
-            content.parts.append(to_genai_part(message))
     return llm_response
+
+
+def _prepend_quote(content, question: str) -> None:
+    """Prepend the selected question as a markdown quote to the reply text.
+
+    Mitigates GE's uneditable "User action triggered." bubble: the agent's reply
+    then opens with what the user actually picked, e.g. "> Show me the form".
+    """
+    for p in content.parts:
+        if p.text is not None:
+            body = p.text.lstrip()
+            p.text = f"> {question}\n\n{body}" if body else f"> {question}"
+            return
 
 
 def _handle_form_submit(content, ctx) -> None:
@@ -279,8 +287,7 @@ root_agent = LlmAgent(
         "event:\n"
         "- context has 'question': treat that text as the user's message and "
         "respond to it, routing as above. Do NOT echo or quote the question "
-        "yourself — the server shows the chosen question in the clicked card "
-        "automatically.\n"
+        "yourself — the server adds it above your reply automatically.\n"
         "- name is 'register_submitted': the server validates this for you "
         "and replaces your text automatically. Just write a short neutral "
         "acknowledgement (e.g. 'Processing your registration…') and end "
