@@ -13,11 +13,13 @@ Adding a new gallery component:
 """
 import json
 import re
+from urllib.parse import urlparse
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
+from google.genai import types as genai_types
 
 from .a2ui import (
     extract_user_action,
@@ -102,6 +104,28 @@ GALLERY_REFERENCES = [
     {"title": "Agent Engine Deployment Guide", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy"},
     {"title": "CopilotKit", "url": "https://www.copilotkit.ai/"},
 ]
+
+
+def _references_grounding_metadata() -> genai_types.GroundingMetadata:
+    """Build synthetic grounding metadata from our curated reference list.
+
+    EXPERIMENT: GE renders a native "Sources" chip + side panel from a response's
+    grounding_metadata (normally produced by a real grounding tool). We attach it
+    ourselves to test whether GE surfaces our hand-picked links the same way.
+    ADK forwards grounding_metadata over A2A as namespaced message metadata; if GE
+    doesn't read that, the panel simply won't appear (no harm to other rendering).
+    """
+    chunks = []
+    for ref in GALLERY_REFERENCES:
+        domain = urlparse(ref["url"]).netloc.removeprefix("www.")
+        chunks.append(
+            genai_types.GroundingChunk(
+                web=genai_types.GroundingChunkWeb(
+                    uri=ref["url"], title=ref["title"], domain=domain
+                )
+            )
+        )
+    return genai_types.GroundingMetadata(grounding_chunks=chunks)
 
 
 # Nav buttons: (label, question reported on click, target component marker).
@@ -215,6 +239,11 @@ def _append_gallery_parts(
         # No component selected — show the nav card (followups, "menu", plain chat)
         for message in gallery_nav_messages():
             content.parts.append(to_genai_part(message))
+
+    # EXPERIMENT: on the references demo, also attach grounding metadata so GE can
+    # try to render its native "Sources" side panel from our curated links.
+    if component == "references":
+        llm_response.grounding_metadata = _references_grounding_metadata()
     return llm_response
 
 

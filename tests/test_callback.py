@@ -183,6 +183,22 @@ class TestComponentRouting:
         ]
         assert "Modal" in all_component_types
 
+    def test_references_attaches_grounding_metadata(self):
+        resp = _make_response("Intro.\n[[COMPONENT:references]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        md = resp.grounding_metadata
+        assert md is not None and md.grounding_chunks
+        # one web chunk per curated reference, with uri + title
+        assert len(md.grounding_chunks) == 10
+        first = md.grounding_chunks[0].web
+        assert first.uri and first.title
+
+    def test_non_references_has_no_grounding_metadata(self):
+        resp = _make_response("Here's the form.\n[[COMPONENT:form]]")
+        resp.grounding_metadata = None  # baseline
+        _append_gallery_parts(_make_ctx(), resp)
+        assert resp.grounding_metadata is None
+
     def test_followups_marker_emits_only_nav(self):
         # followups has no COMPONENT_BUILDERS entry — only the nav card
         parts = self._run("followups")
