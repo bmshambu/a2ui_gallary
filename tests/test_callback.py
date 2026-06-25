@@ -193,6 +193,18 @@ class TestComponentRouting:
         first = md.grounding_chunks[0].web
         assert first.uri and first.title
 
+    def test_references_grounding_has_supports(self):
+        resp = _make_response("Here are the docs.\n[[COMPONENT:references]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        md = resp.grounding_metadata
+        assert md.grounding_supports, "supports missing — GE needs them to cite"
+        sup = md.grounding_supports[0]
+        assert sup.grounding_chunk_indices == list(range(10))
+        # byte offsets must lie within the reply text
+        reply = resp.content.parts[0].text
+        assert 0 <= sup.segment.start_index < sup.segment.end_index
+        assert sup.segment.end_index == len(reply.rstrip().encode("utf-8"))
+
     def test_non_references_has_no_grounding_metadata(self):
         resp = _make_response("Here's the form.\n[[COMPONENT:form]]")
         resp.grounding_metadata = None  # baseline

@@ -106,14 +106,18 @@ GALLERY_REFERENCES = [
 ]
 
 
-def _references_grounding_metadata() -> genai_types.GroundingMetadata:
+def _references_grounding_metadata(reply_text: str = "") -> genai_types.GroundingMetadata:
     """Build synthetic grounding metadata from our curated reference list.
 
     EXPERIMENT: GE renders a native "Sources" chip + side panel from a response's
     grounding_metadata (normally produced by a real grounding tool). We attach it
     ourselves to test whether GE surfaces our hand-picked links the same way.
-    ADK forwards grounding_metadata over A2A as namespaced message metadata; if GE
-    doesn't read that, the panel simply won't appear (no harm to other rendering).
+
+    First attempt sent grounding_chunks only and GE rendered nothing — real
+    grounding always includes grounding_supports (segment→chunk citations), so we
+    now anchor one support to the reply text. If GE still shows no native panel,
+    the boundary is architectural (external agents can't drive it) and the path
+    is a real grounding tool / Vertex AI Search data store instead.
     """
     chunks = []
     for ref in GALLERY_REFERENCES:
@@ -125,7 +129,29 @@ def _references_grounding_metadata() -> genai_types.GroundingMetadata:
                 )
             )
         )
-    return genai_types.GroundingMetadata(grounding_chunks=chunks)
+
+    supports = None
+    text = reply_text.rstrip()
+    if text:
+        # Anchor a single citation to the final sentence, citing every source.
+        # Segment offsets are UTF-8 byte indices into the response text.
+        anchor = text.rsplit(". ", 1)[-1] or text
+        start = text.rfind(anchor)
+        start = start if start >= 0 else 0
+        supports = [
+            genai_types.GroundingSupport(
+                segment=genai_types.Segment(
+                    start_index=len(text[:start].encode("utf-8")),
+                    end_index=len(text.encode("utf-8")),
+                    text=text[start:],
+                ),
+                grounding_chunk_indices=list(range(len(chunks))),
+            )
+        ]
+
+    return genai_types.GroundingMetadata(
+        grounding_chunks=chunks, grounding_supports=supports
+    )
 
 
 # Nav buttons: (label, question reported on click, target component marker).
@@ -243,7 +269,8 @@ def _append_gallery_parts(
     # EXPERIMENT: on the references demo, also attach grounding metadata so GE can
     # try to render its native "Sources" side panel from our curated links.
     if component == "references":
-        llm_response.grounding_metadata = _references_grounding_metadata()
+        reply_text = next((p.text for p in content.parts if p.text), "")
+        llm_response.grounding_metadata = _references_grounding_metadata(reply_text)
     return llm_response
 
 
