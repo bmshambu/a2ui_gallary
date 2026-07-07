@@ -176,12 +176,20 @@ class TestComponentRouting:
     def test_references_marker_emits_modal(self):
         parts = self._run("references")
         surface_updates = [p for p in parts if "surfaceUpdate" in p]
-        all_component_types = [
-            list(c["component"].keys())[0]
-            for su in surface_updates
-            for c in su["surfaceUpdate"]["components"]
+        comps = [c for su in surface_updates for c in su["surfaceUpdate"]["components"]]
+        types = [list(c["component"].keys())[0] for c in comps]
+        # one separate modal per reference (3 demo refs), not one combined
+        assert types.count("Modal") == 3
+        blob = str(comps)
+        assert "Reference Information" in blob
+        assert "FLIGHT-OP-01" in blob  # ref id
+        assert "Austrian Airlines" in blob  # the text chunk
+        # each modal's entry point is its own chip
+        modal_entries = [
+            c["component"]["Modal"]["entryPointChild"]
+            for c in comps if "Modal" in c["component"]
         ]
-        assert "Modal" in all_component_types
+        assert modal_entries == ["chip_0", "chip_1", "chip_2"]
 
     def test_references_attaches_grounding_metadata(self):
         resp = _make_response("Intro.\n[[COMPONENT:references]]")

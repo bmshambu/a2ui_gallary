@@ -261,3 +261,83 @@ def data_table_messages(assets: list[dict] | None = None) -> list[dict]:
         {"dataModelUpdate": {"surfaceId": surface_id, "contents": {}}},
         {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
     ]
+
+
+# ── Tool-return reference chunks (id + text) ────────────────────────────────
+#
+# Client use case: tools (e.g. BoardEx) return a block of text keyed by an ID,
+# NOT a URL. They want to click a reference and read that raw text/answer in a
+# modal, labelled by its ref id. This is the A2UI counterpart to the native GE
+# Sources panel (which is URL/document oriented) — the two coexist.
+
+DEMO_TOOL_REFERENCES = [
+    {"id": "FLIGHT-OP-01", "text": "This flight is operated by Austrian Airlines. Please arrive at the gate 30 minutes before departure."},
+    {"id": "BOARDEX-4471", "text": "Board members: Jane Doe (Chair), John Smith (CEO), Aisha Khan (CFO). Company ID: 4471."},
+    {"id": "FILING-Q1-26", "text": "Q1 FY26 filing: revenue up 12% YoY; operating margin 18%. Full-year guidance reaffirmed."},
+]
+
+
+def reference_info_messages(references: list[dict] | None = None) -> list[dict]:
+    """Reference chunks as a SEPARATE 'Reference Information' modal per ref id.
+
+    In-chat: a 'Sources' heading + one chip per reference labelled by its ref
+    id (📄 REF-ID). Each chip is its OWN Modal entry point, so clicking a chip
+    opens a modal showing only that reference — its ref id (bold) above the raw
+    text chunk returned by the tool. (One combined modal was confusing: three
+    chips opening the same popup.) GE provides the close (X); no URL needed.
+
+    Args:
+        references: list of {"id": str, "text": str}. Defaults to the demo set.
+    """
+    references = references if references is not None else DEMO_TOOL_REFERENCES
+    surface_id = _surface("ref-info")
+    n = len(references)
+
+    components = [
+        {
+            "id": "root",
+            "component": {
+                "Column": {
+                    "alignment": "start",
+                    "children": {
+                        "explicitList": ["sources_header"]
+                        + [f"modal_{i}" for i in range(n)]
+                    },
+                }
+            },
+        },
+        _text("sources_header", "Sources", usage_hint="h5"),
+    ]
+
+    for i, ref in enumerate(references):
+        components += [
+            # Chip (entry point) → its own modal with just this reference
+            {
+                "id": f"modal_{i}",
+                "component": {
+                    "Modal": {
+                        "entryPointChild": f"chip_{i}",
+                        "contentChild": f"card_{i}",
+                    }
+                },
+            },
+            _text(f"chip_{i}", f"📄 {ref['id']}"),
+            {"id": f"card_{i}", "component": {"Card": {"child": f"content_{i}"}}},
+            {
+                "id": f"content_{i}",
+                "component": {
+                    "Column": {
+                        "alignment": "stretch",
+                        "children": {"explicitList": [f"header_{i}", f"block_{i}"]},
+                    }
+                },
+            },
+            _text(f"header_{i}", "Reference Information", usage_hint="h2"),
+            _text(f"block_{i}", f"**{ref['id']}**\n\n{ref['text']}"),
+        ]
+
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]

@@ -24,10 +24,13 @@ from google.genai import types as genai_types
 from .a2ui import (
     extract_user_action,
     followup_messages,
-    references_modal,
     to_genai_part,
 )
-from .gallery import data_table_messages, registration_form_messages
+from .gallery import (
+    data_table_messages,
+    reference_info_messages,
+    registration_form_messages,
+)
 
 _MARKER_RE = re.compile(r"\[\[COMPONENT:(\w+)\]\]")
 
@@ -196,7 +199,10 @@ def gallery_nav_messages() -> list[dict]:
 COMPONENT_BUILDERS = {
     "form": registration_form_messages,
     "table": data_table_messages,
-    "references": lambda: references_modal(GALLERY_REFERENCES),
+    # References now uses the id+text "Reference Information" modal (client's
+    # tool-return use case). The native GE Sources panel (grounding_metadata,
+    # attached below) still renders alongside it from GALLERY_REFERENCES.
+    "references": reference_info_messages,
     # "followups" needs no entry: the nav card below every response IS the demo
 }
 
