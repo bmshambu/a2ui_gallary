@@ -91,18 +91,30 @@ def _strip_a2ui_from_history(
             cnt.parts = kept
     return None
 
-# A2UI/ADK reading list for the references-modal demo
+# A2UI/ADK reading list for the references-modal demo. `snippet` is the source
+# passage we surface via grounding retrieved_context.text (client asked to see the
+# actual source text, not just a title) — see _references_grounding_metadata.
 GALLERY_REFERENCES = [
-    {"title": "A2UI Specification (v0.8)", "url": "https://github.com/google/a2ui"},
-    {"title": "Agent Development Kit (ADK) Docs", "url": "https://google.github.io/adk-docs/"},
-    {"title": "A2A Protocol", "url": "https://a2a-protocol.org/"},
-    {"title": "Vertex AI Agent Engine", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview"},
-    {"title": "Gemini Enterprise Overview", "url": "https://cloud.google.com/gemini-enterprise"},
-    {"title": "ADK A2A Integration Guide", "url": "https://google.github.io/adk-docs/a2a/"},
-    {"title": "AG-UI Protocol", "url": "https://docs.ag-ui.com/"},
-    {"title": "A2UI Composer Playground", "url": "https://a2ui-composer.ag-ui.com/"},
-    {"title": "Agent Engine Deployment Guide", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy"},
-    {"title": "CopilotKit", "url": "https://www.copilotkit.ai/"},
+    {"title": "A2UI Specification (v0.8)", "url": "https://github.com/google/a2ui",
+     "snippet": "A2UI v0.8 defines the standard component catalog and the three-message wire format — surfaceUpdate, dataModelUpdate, and beginRendering — that Gemini Enterprise renders natively."},
+    {"title": "Agent Development Kit (ADK) Docs", "url": "https://google.github.io/adk-docs/",
+     "snippet": "ADK is Google's open-source framework for building, evaluating, and deploying agents, including LlmAgent, tools, callbacks, and session management."},
+    {"title": "A2A Protocol", "url": "https://a2a-protocol.org/",
+     "snippet": "The Agent2Agent (A2A) protocol lets agents from different platforms discover each other and exchange messages, tasks, and structured DataParts."},
+    {"title": "Vertex AI Agent Engine", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview",
+     "snippet": "Agent Engine is the managed runtime that deploys, scales, and serves ADK agents, handling sessions and memory behind a stable resource name."},
+    {"title": "Gemini Enterprise Overview", "url": "https://cloud.google.com/gemini-enterprise",
+     "snippet": "Gemini Enterprise is Google's platform for building, governing, and running enterprise agents grounded in company data, with a chat surface that renders A2UI."},
+    {"title": "ADK A2A Integration Guide", "url": "https://google.github.io/adk-docs/a2a/",
+     "snippet": "Explains how ADK exposes an agent over the A2A protocol and how parts are converted to and from A2A messages on the wire."},
+    {"title": "AG-UI Protocol", "url": "https://docs.ag-ui.com/",
+     "snippet": "AG-UI is an open protocol for streaming agent-generated user interface events to a front end, a sibling effort to A2UI."},
+    {"title": "A2UI Composer Playground", "url": "https://a2ui-composer.ag-ui.com/",
+     "snippet": "An interactive playground for prototyping A2UI component layouts; note its export format differs from the GE v0.8 wire format and must be converted."},
+    {"title": "Agent Engine Deployment Guide", "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/deploy",
+     "snippet": "Step-by-step guide to packaging and deploying an agent to Vertex AI Agent Engine, including dependency pinning and staging buckets."},
+    {"title": "CopilotKit", "url": "https://www.copilotkit.ai/",
+     "snippet": "CopilotKit is an open-source framework for embedding in-app AI copilots and generative UI into web applications."},
 ]
 
 
@@ -115,17 +127,22 @@ def _references_grounding_metadata(reply_text: str = "") -> genai_types.Groundin
 
     First attempt sent grounding_chunks only and GE rendered nothing — real
     grounding always includes grounding_supports (segment→chunk citations), so we
-    now anchor one support to the reply text. If GE still shows no native panel,
-    the boundary is architectural (external agents can't drive it) and the path
-    is a real grounding tool / Vertex AI Search data store instead.
+    anchor one support to the reply text.
+
+    Chunks use `retrieved_context` (which carries a `text` field = the actual
+    source passage) rather than `web` (title/uri only). This is the experiment for
+    the client ask "show the source text, not just a name" — if GE surfaces
+    retrieved_context.text in its citation/Sources UI, users see the concrete
+    passage. Falls back gracefully: title + uri still render if text is ignored.
     """
     chunks = []
     for ref in GALLERY_REFERENCES:
-        domain = urlparse(ref["url"]).netloc.removeprefix("www.")
         chunks.append(
             genai_types.GroundingChunk(
-                web=genai_types.GroundingChunkWeb(
-                    uri=ref["url"], title=ref["title"], domain=domain
+                retrieved_context=genai_types.GroundingChunkRetrievedContext(
+                    uri=ref["url"],
+                    title=ref["title"],
+                    text=ref.get("snippet", ""),
                 )
             )
         )

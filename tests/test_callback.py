@@ -188,10 +188,11 @@ class TestComponentRouting:
         _append_gallery_parts(_make_ctx(), resp)
         md = resp.grounding_metadata
         assert md is not None and md.grounding_chunks
-        # one web chunk per curated reference, with uri + title
+        # one retrieved_context chunk per curated reference: uri + title + text
         assert len(md.grounding_chunks) == 10
-        first = md.grounding_chunks[0].web
+        first = md.grounding_chunks[0].retrieved_context
         assert first.uri and first.title
+        assert first.text, "source snippet text missing"
 
     def test_references_grounding_has_supports(self):
         resp = _make_response("Here are the docs.\n[[COMPONENT:references]]")
