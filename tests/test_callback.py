@@ -190,29 +190,18 @@ class TestComponentRouting:
             for c in comps if "Modal" in c["component"]
         ]
         assert modal_entries == ["chip_0", "chip_1", "chip_2"]
+        # each chip is a Card (tappable-tile affordance), not bare text
+        chips = {c["id"]: c for c in comps}
+        assert all("Card" in chips[e]["component"] for e in modal_entries)
 
-    def test_references_attaches_grounding_metadata(self):
+    def test_references_grounding_disabled(self):
+        # Native Sources panel (grounding_metadata) is currently commented out so
+        # the A2UI reference tiles render at the bottom. Builder is retained for
+        # re-enabling; when re-enabled this expectation flips.
         resp = _make_response("Intro.\n[[COMPONENT:references]]")
+        resp.grounding_metadata = None  # baseline
         _append_gallery_parts(_make_ctx(), resp)
-        md = resp.grounding_metadata
-        assert md is not None and md.grounding_chunks
-        # one retrieved_context chunk per curated reference: uri + title + text
-        assert len(md.grounding_chunks) == 10
-        first = md.grounding_chunks[0].retrieved_context
-        assert first.uri and first.title
-        assert first.text, "source snippet text missing"
-
-    def test_references_grounding_has_supports(self):
-        resp = _make_response("Here are the docs.\n[[COMPONENT:references]]")
-        _append_gallery_parts(_make_ctx(), resp)
-        md = resp.grounding_metadata
-        assert md.grounding_supports, "supports missing — GE needs them to cite"
-        sup = md.grounding_supports[0]
-        assert sup.grounding_chunk_indices == list(range(10))
-        # byte offsets must lie within the reply text
-        reply = resp.content.parts[0].text
-        assert 0 <= sup.segment.start_index < sup.segment.end_index
-        assert sup.segment.end_index == len(reply.rstrip().encode("utf-8"))
+        assert resp.grounding_metadata is None
 
     def test_non_references_has_no_grounding_metadata(self):
         resp = _make_response("Here's the form.\n[[COMPONENT:form]]")

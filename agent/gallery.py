@@ -311,7 +311,7 @@ def reference_info_messages(references: list[dict] | None = None) -> list[dict]:
 
     for i, ref in enumerate(references):
         components += [
-            # Chip (entry point) → its own modal with just this reference
+            # Chip (entry point) → its own modal with just this reference.
             {
                 "id": f"modal_{i}",
                 "component": {
@@ -321,19 +321,46 @@ def reference_info_messages(references: list[dict] | None = None) -> list[dict]:
                     }
                 },
             },
-            _text(f"chip_{i}", f"📄 {ref['id']}"),
+            # Chip wrapped in a Card so it renders as a tappable tile (GE has no
+            # colour control; a Card + bold text + chevron is the strongest
+            # "this is clickable" affordance available).
+            {"id": f"chip_{i}", "component": {"Card": {"child": f"chip_row_{i}"}}},
+            {
+                "id": f"chip_row_{i}",
+                "component": {
+                    "Row": {
+                        "alignment": "center",
+                        "distribution": "spaceBetween",
+                        "children": {
+                            "explicitList": [f"chip_label_{i}", f"chip_more_{i}"]
+                        },
+                    }
+                },
+            },
+            _text(f"chip_label_{i}", f"📄 **{ref['id']}**"),
+            _text(f"chip_more_{i}", "View ›", usage_hint="caption"),
+            # ── Modal content: title + divider + source label + body text ──
             {"id": f"card_{i}", "component": {"Card": {"child": f"content_{i}"}}},
             {
                 "id": f"content_{i}",
                 "component": {
                     "Column": {
                         "alignment": "stretch",
-                        "children": {"explicitList": [f"header_{i}", f"block_{i}"]},
+                        "children": {
+                            "explicitList": [
+                                f"header_{i}",
+                                f"hdiv_{i}",
+                                f"srclabel_{i}",
+                                f"block_{i}",
+                            ]
+                        },
                     }
                 },
             },
-            _text(f"header_{i}", "Reference Information", usage_hint="h2"),
-            _text(f"block_{i}", f"**{ref['id']}**\n\n{ref['text']}"),
+            _text(f"header_{i}", "📄 Reference Information", usage_hint="h3"),
+            {"id": f"hdiv_{i}", "component": {"Divider": {"axis": "horizontal"}}},
+            _text(f"srclabel_{i}", f"Source · {ref['id']}", usage_hint="caption"),
+            _text(f"block_{i}", ref["text"]),
         ]
 
     return [

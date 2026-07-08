@@ -289,11 +289,13 @@ def _append_gallery_parts(
         for message in gallery_nav_messages():
             content.parts.append(to_genai_part(message))
 
-    # EXPERIMENT: on the references demo, also attach grounding metadata so GE can
-    # try to render its native "Sources" side panel from our curated links.
-    if component == "references":
-        reply_text = next((p.text for p in content.parts if p.text), "")
-        llm_response.grounding_metadata = _references_grounding_metadata(reply_text)
+    # Native GE Sources panel via grounding_metadata is DISABLED for now: when
+    # present GE anchors the grounded answer block at the bottom and pushes the
+    # A2UI reference tiles above the text. Commented out so the tiles render at
+    # the bottom as expected. Re-enable by uncommenting (builder is retained).
+    # if component == "references":
+    #     reply_text = next((p.text for p in content.parts if p.text), "")
+    #     llm_response.grounding_metadata = _references_grounding_metadata(reply_text)
     return llm_response
 
 
