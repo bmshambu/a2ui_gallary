@@ -511,6 +511,17 @@ def datetime_messages() -> list[dict]:
     ]
 
 
+# Inline SVG (URL-encoded) so the Image demo needs no network fetch. Single
+# quotes inside the SVG avoid escaping; '#' is encoded as %23, spaces as %20.
+_DEMO_IMAGE_DATA_URI = (
+    "data:image/svg+xml,"
+    "%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='400'%20height='200'%3E"
+    "%3Crect%20width='400'%20height='200'%20fill='%234285F4'/%3E"
+    "%3Ctext%20x='200'%20y='112'%20font-family='sans-serif'%20font-size='34'%20"
+    "fill='white'%20text-anchor='middle'%3EA2UI%20Image%3C/text%3E%3C/svg%3E"
+)
+
+
 def image_messages() -> list[dict]:
     """Image — renders from a URL; fit controls scaling."""
     surface_id = _surface("image")
@@ -530,16 +541,19 @@ def image_messages() -> list[dict]:
             "id": "image",
             "component": {
                 "Image": {
-                    "url": {
-                        "literalString": "https://picsum.photos/seed/a2ui-gallery/640/320"
-                    },
-                    "fit": "cover",
+                    # Data URI (embedded SVG) — no external fetch. External hosts
+                    # failed in GE: picsum → "content could not be displayed";
+                    # gstatic → a hard 500 ("Something went wrong"), which means
+                    # GE fetches the image server-side and the fetch throws. An
+                    # inline data URI removes the fetch entirely.
+                    "url": {"literalString": _DEMO_IMAGE_DATA_URI},
+                    "fit": "contain",
                 }
             },
         },
         _text(
             "caption",
-            "Images render from a URL — `fit` controls scaling (cover / contain).",
+            "This image is embedded inline as a data URI (no external URL).",
             usage_hint="caption",
         ),
     ]
