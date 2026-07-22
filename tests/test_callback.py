@@ -232,9 +232,71 @@ class TestComponentRouting:
         ]
         assert len(btn_ids) >= 4, "nav buttons missing for [[COMPONENT:followups]]"
 
-        for marker in ["form", "table", "references"]:
-            parts = self._run(marker)
-            assert len(parts) == 3, f"[[COMPONENT:{marker}]] should emit exactly 3 DataParts"
+
+# ── new standard-catalog components ────────────────────────────────────────────
+
+class TestNewComponents:
+    def _types(self, marker: str) -> list[str]:
+        resp = _make_response(f"Intro.\n[[COMPONENT:{marker}]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        parts = _a2ui_parts(resp)
+        return [
+            list(c["component"].keys())[0]
+            for su in parts if "surfaceUpdate" in su
+            for c in su["surfaceUpdate"]["components"]
+        ]
+
+    @pytest.mark.parametrize("marker,expected", [
+        ("choice", "MultipleChoice"),
+        ("slider", "Slider"),
+        ("datetime", "DateTimeInput"),
+        ("image", "Image"),
+        ("tabs", "Tabs"),
+    ])
+    def test_marker_emits_component(self, marker, expected):
+        assert expected in self._types(marker)
+
+    def test_each_new_component_is_three_dataparts(self):
+        for marker in ("choice", "slider", "datetime", "image", "tabs"):
+            resp = _make_response(f"Intro.\n[[COMPONENT:{marker}]]")
+            _append_gallery_parts(_make_ctx(), resp)
+            assert len(_a2ui_parts(resp)) == 3, f"{marker} should be 3 DataParts"
+
+    def test_input_components_seed_flat_datamodel(self):
+        # binding paths are flat single-segment keys (GE requirement)
+        resp = _make_response("Intro.\n[[COMPONENT:slider]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        dm = [p for p in _a2ui_parts(resp) if "dataModelUpdate" in p][0]
+        assert dm["dataModelUpdate"]["contents"] == {"rating": 5}
+
+
+class TestDemoSubmit:
+    def _submit(self, ctx_data: dict):
+        ua = json.dumps({"userAction": {
+            "name": "demo_submitted", "context": ctx_data,
+        }})
+        ctx = MagicMock()
+        ctx.user_content = genai_types.Content(
+            parts=[genai_types.Part(text=ua)], role="user"
+        )
+        resp = _make_response("ack\n[[COMPONENT:followups]]")
+        _append_gallery_parts(ctx, resp)
+        return resp
+
+    def test_echoes_submitted_scalar(self):
+        resp = self._submit({"rating": 8})
+        text = resp.content.parts[0].text
+        assert "You submitted" in text and "8" in text
+
+    def test_echoes_submitted_list(self):
+        resp = self._submit({"cuisine": ["italian", "indian"]})
+        text = resp.content.parts[0].text
+        assert "italian, indian" in text
+
+    def test_demo_submit_shows_nav_only(self):
+        resp = self._submit({"rating": 3})
+        surface_updates = [p for p in _a2ui_parts(resp) if "surfaceUpdate" in p]
+        assert len(surface_updates) == 1  # nav card, no component re-emitted
 
 
 # ── surfaceId freshness ───────────────────────────────────────────────────────

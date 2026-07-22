@@ -27,9 +27,15 @@ from .a2ui import (
     to_genai_part,
 )
 from .gallery import (
+    DEMO_SUBMIT_ACTION,
     data_table_messages,
+    datetime_messages,
+    image_messages,
+    multiple_choice_messages,
     reference_info_messages,
     registration_form_messages,
+    slider_messages,
+    tabs_messages,
 )
 
 _MARKER_RE = re.compile(r"\[\[COMPONENT:(\w+)\]\]")
@@ -182,6 +188,11 @@ _NAV_BUTTONS = [
     ("📝 Form with validation", "Show me the registration form component", "form"),
     ("📊 Data table", "Show me the financial data table component", "table"),
     ("📚 References modal", "Show me the references component", "references"),
+    ("🔽 Dropdown (MultipleChoice)", "Show me the multiple choice dropdown component", "choice"),
+    ("🎚️ Slider", "Show me the slider component", "slider"),
+    ("📅 Date & time picker", "Show me the date time input component", "datetime"),
+    ("🖼️ Image", "Show me the image component", "image"),
+    ("🗂️ Tabs", "Show me the tabs component", "tabs"),
     ("💬 Follow-up buttons", "Show me the follow-up buttons component", "followups"),
 ]
 _QUESTION_TO_COMPONENT = {question: comp for _, question, comp in _NAV_BUTTONS}
@@ -203,6 +214,11 @@ COMPONENT_BUILDERS = {
     # tool-return use case). The native GE Sources panel (grounding_metadata,
     # attached below) still renders alongside it from GALLERY_REFERENCES.
     "references": reference_info_messages,
+    "choice": multiple_choice_messages,
+    "slider": slider_messages,
+    "datetime": datetime_messages,
+    "image": image_messages,
+    "tabs": tabs_messages,
     # "followups" needs no entry: the nav card below every response IS the demo
 }
 
@@ -260,11 +276,16 @@ def _append_gallery_parts(
     # by handling the click deterministically here instead of trusting the LLM.
     user_action = extract_user_action(_current_user_content(callback_context))
     if user_action:
+        name = user_action.get("name")
         ctx = user_action.get("context") or {}
         if isinstance(ctx, list):
             ctx = {item["key"]: item.get("value") for item in ctx if "key" in item}
-        if user_action.get("name") == "register_submitted":
+        if name == "register_submitted":
             _handle_form_submit(content, ctx)
+            component = None  # submit → back to the nav card
+        elif name == DEMO_SUBMIT_ACTION:
+            _handle_demo_submit(content, ctx)
+            component = None
         else:
             # Echo the chosen question as a quote above the reply, so the bubble
             # reads "> Show me the … component" instead of just the component.
@@ -310,6 +331,31 @@ def _prepend_quote(content, question: str) -> None:
             body = p.text.lstrip()
             p.text = f"> {question}\n\n{body}" if body else f"> {question}"
             return
+
+
+def _handle_demo_submit(content, ctx) -> None:
+    """Echo the value(s) submitted from an input-component demo.
+
+    Shared by the MultipleChoice / Slider / DateTimeInput demos — proves the
+    two-way binding worked by showing back what GE sent for each bound path.
+    """
+    if not ctx:
+        result = (
+            "**Nothing submitted yet** — interact with the component above, "
+            "then press submit."
+        )
+    else:
+        lines = ["**You submitted:**\n"]
+        for k, v in ctx.items():
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v) if v else "(none selected)"
+            lines.append(f"- {k}: `{v}`")
+        result = "\n".join(lines)
+
+    for p in content.parts:
+        if p.text:
+            p.text = result
+            break
 
 
 def _handle_form_submit(content, ctx) -> None:
@@ -369,6 +415,13 @@ root_agent = LlmAgent(
         "crypto/financial data, or tabular layout\n"
         "  [[COMPONENT:references]] — user asks for references, sources, "
         "citations, links, or documentation\n"
+        "  [[COMPONENT:choice]] — user asks for a dropdown, multiple choice, "
+        "selection, options, or picker\n"
+        "  [[COMPONENT:slider]] — user asks for a slider or a numeric range\n"
+        "  [[COMPONENT:datetime]] — user asks for a date picker, time picker, "
+        "calendar, or scheduling input\n"
+        "  [[COMPONENT:image]] — user asks for an image or picture\n"
+        "  [[COMPONENT:tabs]] — user asks for tabs or tabbed sections\n"
         "  [[COMPONENT:followups]] — anything else: greetings, questions "
         "about the gallery or A2UI, the follow-up-buttons demo itself, or "
         "when the user says 'menu', 'back', 'home', or 'navigation'\n"
@@ -376,20 +429,21 @@ root_agent = LlmAgent(
         "When showing a component, write 1-3 sentences: what the component "
         "is and what GE capability it demonstrates (e.g. the form shows "
         "two-way data binding and regex validation; the table shows nested "
-        "Row/Column layout; references show the Modal overlay).\n"
+        "Row/Column layout; the dropdown/slider/date picker show two-way "
+        "binding for different input types; tabs show parallel sections).\n"
         "\n"
         "BUTTON CLICKS — if the user message contains a JSON userAction "
         "event:\n"
         "- context has 'question': treat that text as the user's message and "
         "respond to it, routing as above. Do NOT echo or quote the question "
         "yourself — the server adds it above your reply automatically.\n"
-        "- name is 'register_submitted': the server validates this for you "
-        "and replaces your text automatically. Just write a short neutral "
-        "acknowledgement (e.g. 'Processing your registration…') and end "
-        "with [[COMPONENT:followups]].\n"
+        "- name is 'register_submitted' or 'demo_submitted': the server "
+        "handles it and replaces your text automatically. Just write a short "
+        "neutral acknowledgement (e.g. 'Processing…') and end with "
+        "[[COMPONENT:followups]].\n"
         "\n"
-        "If asked what you can show, summarize the four demos in one line "
-        "each — the buttons below let them pick."
+        "If asked what you can show, summarize the demos briefly — the "
+        "buttons below let them pick."
     ),
     before_model_callback=_strip_a2ui_from_history,
     after_model_callback=_append_gallery_parts,

@@ -368,3 +368,221 @@ def reference_info_messages(references: list[dict] | None = None) -> list[dict]:
         {"dataModelUpdate": {"surfaceId": surface_id, "contents": {}}},
         {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
     ]
+
+
+# ── Extra standard-catalog components (from wadave/agent-a2ui-demo) ──────────
+#
+# GE renders the standard v0.8 catalog only. These five are all standard
+# (MultipleChoice is GE's name for that repo's "ChoicePicker"). The repo's
+# GoogleMap / WebFrameUrl are custom components and are intentionally skipped —
+# they need a registered custom catalog, which GE's standard rendering has not.
+#
+# Input demos bind to FLAT top-level data-model keys (GE writes edits back only
+# to single-segment paths) and report their value via a shared "demo_submitted"
+# action that the agent echoes server-side.
+
+DEMO_SUBMIT_ACTION = "demo_submitted"
+
+
+def _demo_submit(comp_id: str, label: str, key: str, path: str) -> list[dict]:
+    """A primary Button that reports one data-model path under `key`."""
+    return [
+        {
+            "id": comp_id,
+            "component": {
+                "Button": {
+                    "child": f"{comp_id}_label",
+                    "primary": True,
+                    "action": {
+                        "name": DEMO_SUBMIT_ACTION,
+                        "context": [{"key": key, "value": {"path": path}}],
+                    },
+                }
+            },
+        },
+        _text(f"{comp_id}_label", label),
+    ]
+
+
+def multiple_choice_messages() -> list[dict]:
+    """MultipleChoice (dropdown / multi-select) — the repo's ChoicePicker."""
+    surface_id = _surface("choice")
+    components = [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {
+            "id": "col",
+            "component": {
+                "Column": {
+                    "alignment": "stretch",
+                    "children": {"explicitList": ["prompt", "picker", "submit"]},
+                }
+            },
+        },
+        _text("prompt", "Pick up to two cuisines you like:", usage_hint="h4"),
+        {
+            "id": "picker",
+            "component": {
+                "MultipleChoice": {
+                    "selections": {"path": "/cuisine"},
+                    "maxAllowedSelections": 2,
+                    "options": [
+                        {"label": {"literalString": "Italian"}, "value": "italian"},
+                        {"label": {"literalString": "Japanese"}, "value": "japanese"},
+                        {"label": {"literalString": "Mexican"}, "value": "mexican"},
+                        {"label": {"literalString": "Indian"}, "value": "indian"},
+                    ],
+                }
+            },
+        },
+    ]
+    components += _demo_submit("submit", "Submit choice", "cuisine", "/cuisine")
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {"cuisine": []}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
+
+
+def slider_messages() -> list[dict]:
+    """Slider — numeric value bound to the data model."""
+    surface_id = _surface("slider")
+    components = [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {
+            "id": "col",
+            "component": {
+                "Column": {
+                    "alignment": "stretch",
+                    "children": {"explicitList": ["prompt", "slider", "submit"]},
+                }
+            },
+        },
+        _text("prompt", "How likely are you to recommend us? (0–10)", usage_hint="h4"),
+        {
+            "id": "slider",
+            "component": {
+                "Slider": {
+                    "value": {"path": "/rating"},
+                    "minValue": 0,
+                    "maxValue": 10,
+                }
+            },
+        },
+    ]
+    components += _demo_submit("submit", "Submit rating", "rating", "/rating")
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {"rating": 5}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
+
+
+def datetime_messages() -> list[dict]:
+    """DateTimeInput — date + time picker bound to the data model."""
+    surface_id = _surface("datetime")
+    components = [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {
+            "id": "col",
+            "component": {
+                "Column": {
+                    "alignment": "stretch",
+                    "children": {"explicitList": ["prompt", "picker", "submit"]},
+                }
+            },
+        },
+        _text("prompt", "Choose a date and time:", usage_hint="h4"),
+        {
+            "id": "picker",
+            "component": {
+                "DateTimeInput": {
+                    "value": {"path": "/when"},
+                    "enableDate": True,
+                    "enableTime": True,
+                }
+            },
+        },
+    ]
+    components += _demo_submit("submit", "Submit", "when", "/when")
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {"when": ""}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
+
+
+def image_messages() -> list[dict]:
+    """Image — renders from a URL; fit controls scaling."""
+    surface_id = _surface("image")
+    components = [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {
+            "id": "col",
+            "component": {
+                "Column": {
+                    "alignment": "stretch",
+                    "children": {"explicitList": ["header", "image", "caption"]},
+                }
+            },
+        },
+        _text("header", "Image component", usage_hint="h4"),
+        {
+            "id": "image",
+            "component": {
+                "Image": {
+                    "url": {
+                        "literalString": "https://picsum.photos/seed/a2ui-gallery/640/320"
+                    },
+                    "fit": "cover",
+                }
+            },
+        },
+        _text(
+            "caption",
+            "Images render from a URL — `fit` controls scaling (cover / contain).",
+            usage_hint="caption",
+        ),
+    ]
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
+
+
+def tabs_messages() -> list[dict]:
+    """Tabs — parallel sections in a single chat bubble."""
+    surface_id = _surface("tabs")
+    components = [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {
+            "id": "col",
+            "component": {
+                "Column": {
+                    "alignment": "stretch",
+                    "children": {"explicitList": ["header", "tabs"]},
+                }
+            },
+        },
+        _text("header", "Tabs component", usage_hint="h4"),
+        {
+            "id": "tabs",
+            "component": {
+                "Tabs": {
+                    "tabItems": [
+                        {"title": {"literalString": "Overview"}, "child": "tab_overview"},
+                        {"title": {"literalString": "Features"}, "child": "tab_features"},
+                        {"title": {"literalString": "Pricing"}, "child": "tab_pricing"},
+                    ]
+                }
+            },
+        },
+        _text("tab_overview", "A2UI Tabs group parallel sections into one chat bubble."),
+        _text("tab_features", "Each tab's child is any component — Text, Column, Card, etc."),
+        _text("tab_pricing", "Tabs are part of GE's standard v0.8 catalog — free to render."),
+    ]
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": {}}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
