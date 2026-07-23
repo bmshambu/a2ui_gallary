@@ -255,18 +255,21 @@ class TestNewComponents:
     def test_marker_emits_component(self, marker, expected):
         assert expected in self._types(marker)
 
-    def test_image_marker_emits_markdown_image_in_text(self):
-        # Image component doesn't render in GE; we use a markdown image in Text
+    def test_image_marker_is_text_explanation(self):
+        # Images don't render in this GE env; the demo is a text explanation
+        # (no <Image> component, no data: URI that breaks the surface).
         resp = _make_response("Intro.\n[[COMPONENT:image]]")
         _append_gallery_parts(_make_ctx(), resp)
         parts = _a2ui_parts(resp)
-        blob = str(parts)
-        assert "Image" not in [
+        types = [
             list(c["component"].keys())[0]
             for su in parts if "surfaceUpdate" in su
             for c in su["surfaceUpdate"]["components"]
         ]
-        assert "![data-uri image](data:image/png;base64," in blob
+        assert "Image" not in types
+        blob = str(parts)
+        assert "data:image" not in blob  # no surface-breaking data URI
+        assert "Image rendering is disabled" in blob
 
     def test_each_new_component_is_three_dataparts(self):
         for marker in ("choice", "slider", "datetime", "image", "tabs"):

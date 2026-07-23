@@ -25,8 +25,6 @@ Composer features with no v0.8/GE equivalent, and how each is handled here:
 import uuid
 from datetime import datetime
 
-from .demo_image import DEMO_IMAGE_DATA_URI
-
 
 def _surface(prefix: str) -> str:
     # Fresh surfaceId per call — GE keys cards by surfaceId, reuse would
@@ -514,7 +512,16 @@ def datetime_messages() -> list[dict]:
 
 
 def image_messages() -> list[dict]:
-    """Image — renders from a URL; fit controls scaling."""
+    """Image — documented as a known GE limitation (images do not render here).
+
+    Every avenue was tested in this GE environment and failed:
+      - <Image> with an external URL  → hard 500 ("Something went wrong")
+      - <Image> with a base64 data URI → not rendered
+      - markdown data: image in Text   → breaks the whole surface (nothing shows)
+    So the demo shows a text explanation instead of a (broken) image. The Image
+    payload shape itself is correct — see encode_image.py / agent/demo_image.py,
+    kept for environments where image sources are allowlisted.
+    """
     surface_id = _surface("image")
     components = [
         {"id": "root", "component": {"Card": {"child": "col"}}},
@@ -523,25 +530,21 @@ def image_messages() -> list[dict]:
             "component": {
                 "Column": {
                     "alignment": "stretch",
-                    "children": {"explicitList": ["header", "image", "caption"]},
+                    "children": {"explicitList": ["header", "body", "note"]},
                 }
             },
         },
         _text("header", "Image component", usage_hint="h4"),
-        # DIAGNOSTIC: mixed markdown in one Text so we can see WHICH parts GE
-        # renders. If bold/italic/link show but the images don't → GE blocks
-        # images in markdown too (CSP). The <Image> component already failed
-        # (payload was delivered correctly per network inspection).
         _text(
-            "image",
-            "**Bold works.** _Italic works._ "
-            "[Link works.](https://github.com/google/a2ui)\n\n"
-            "Data-URI image below (blank if GE blocks data: images):\n\n"
-            f"![data-uri image]({DEMO_IMAGE_DATA_URI})",
+            "body",
+            "The **Image** component displays a picture from a URL "
+            "(`{\"Image\": {\"url\": {...}, \"fit\": \"cover\"}}`).",
         ),
         _text(
-            "caption",
-            "Markdown diagnostic — checking which markdown features GE renders in Text.",
+            "note",
+            "⚠️ Image rendering is disabled in this Gemini Enterprise environment: "
+            "external image hosts are blocked (and error), and inline data: URIs "
+            "are not rendered. Enable it where image sources are allowlisted.",
             usage_hint="caption",
         ),
     ]
