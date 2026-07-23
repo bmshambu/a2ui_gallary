@@ -250,11 +250,23 @@ class TestNewComponents:
         ("choice", "MultipleChoice"),
         ("slider", "Slider"),
         ("datetime", "DateTimeInput"),
-        ("image", "Image"),
         ("tabs", "Tabs"),
     ])
     def test_marker_emits_component(self, marker, expected):
         assert expected in self._types(marker)
+
+    def test_image_marker_emits_markdown_image_in_text(self):
+        # Image component doesn't render in GE; we use a markdown image in Text
+        resp = _make_response("Intro.\n[[COMPONENT:image]]")
+        _append_gallery_parts(_make_ctx(), resp)
+        parts = _a2ui_parts(resp)
+        blob = str(parts)
+        assert "Image" not in [
+            list(c["component"].keys())[0]
+            for su in parts if "surfaceUpdate" in su
+            for c in su["surfaceUpdate"]["components"]
+        ]
+        assert "![A2UI demo image](data:image/png;base64," in blob
 
     def test_each_new_component_is_three_dataparts(self):
         for marker in ("choice", "slider", "datetime", "image", "tabs"):
