@@ -2,7 +2,9 @@
 
 Hard-won findings from building the A2UI Component Gallery agent on **Gemini Enterprise (GE)** with **ADK + Vertex AI Agent Engine**. Each item below was reproduced in GE chat and fixed in code. Share freely — these are the non-obvious GE behaviours that aren't in the docs.
 
-> Stack: ADK `LlmAgent` → `after_model_callback` appends A2UI v0.8 DataParts → A2A → GE renders natively. All logic lives in [`agent/agent.py`](agent/agent.py) and [`agent/gallery.py`](agent/gallery.py). 36 unit tests in [`tests/test_callback.py`](tests/test_callback.py) (no network/LLM).
+> Stack: ADK `LlmAgent` → `after_model_callback` appends A2UI v0.8 DataParts → A2A → GE renders natively. All logic lives in [`agent/agent.py`](agent/agent.py) and [`agent/gallery.py`](agent/gallery.py). 45 unit tests in [`tests/test_callback.py`](tests/test_callback.py) (no network/LLM).
+>
+> Gallery entries: form, table, references (id+text modal), dropdown, slider, date/time, tabs, image (text note — see §7), follow-ups.
 
 ---
 
@@ -108,6 +110,51 @@ Validation also runs **server-side in Python** (in the callback), not via the LL
 
 ---
 
+## 6. Adding more standard-catalog components (dropdown, slider, date/time, tabs) ✅
+
+Added from [`wadave/agent-a2ui-demo`](https://github.com/wadave/agent-a2ui-demo). **GE renders the standard v0.8 catalog only** — that repo's `GoogleMap` / `WebFrameUrl` are *custom* components (need a registered catalog GE's standard rendering lacks) and were skipped. The dropdown is GE's **`MultipleChoice`** (the repo calls it `ChoicePicker`).
+
+Exact v0.8 payloads (verified against GE's component-gallery reference):
+- `Tabs` → `{"tabItems": [{"title": {"literalString": "…"}, "child": "id"}]}`
+- `MultipleChoice` → `{"options": [{"label": {"literalString": "…"}, "value": "…"}], "selections": {"path": "/x"}, "maxAllowedSelections": N}`
+- `Slider` → `{"value": {"path": "/x"}, "minValue": 0, "maxValue": 10}`
+- `DateTimeInput` → `{"value": {"path": "/x"}, "enableDate": true, "enableTime": true}`
+
+**Input demos** (dropdown/slider/date-time) bind to **flat single-segment paths** (§3) and report their value via a shared `demo_submitted` action that the callback echoes server-side (`_handle_demo_submit`) — same server-side pattern as form validation.
+
+Per-component workflow: builder in `gallery.py` → register in `COMPONENT_BUILDERS` + `_NAV_BUTTONS` + `_QUESTION_TO_COMPONENT` + routing marker in the instruction → test.
+
+---
+
+## 7. Images do NOT render in this GE environment ❌ (platform limitation)
+
+Exhaustively tested — **every** avenue failed:
+
+| Attempt | Result |
+|---|---|
+| `Image` + external URL (picsum) | "This content could not be displayed" (CSP block) |
+| `Image` + external URL (gstatic) | **Hard 500** — "Something went wrong" (GE fetches server-side, throws) |
+| `Image` + base64 data URI | Not rendered |
+| Markdown `data:` image inside `Text` | **Breaks the whole surface** — nothing renders, even sibling bold text |
+
+Network inspection (`streamAssist` response) confirmed the A2UI payload is **delivered correctly** (`application/json+a2ui`) — so this is purely **GE-side CSP/renderer**, not fixable from the payload. A large `data:` URI in markdown is actively harmful: it blanks the entire surface.
+
+**Resolution:** the `image` gallery entry is now a **text explanation** of the limitation (no `Image` component, no `data:` URI). `encode_image.py` + `agent/demo_image.py` are kept (unused) for environments where image hosts are allowlisted.
+
+**Rule:** don't put images (any source) or large `data:` URIs into GE payloads in this environment.
+
+---
+
+## 8. Starter prompts — turn-1 suggestion chips ✅
+
+A2UI buttons only appear *after* the agent's first reply. For clickable suggestions **before** the user types, set **Starter Prompts** — these are **GE assistant configuration, not agent code**:
+- GE Console → assistant config → Prompt Chips, **or**
+- Discovery Engine API: `PATCH .../assistants/default_assistant?updateMask=starterPrompts` with `{"starterPrompts": [{"text": "…"}]}` (see [`set_starter_prompts.sh`](set_starter_prompts.sh)).
+
+Unlike A2UI button clicks, **clicked starter prompts arrive as real message text** — so they route through the agent's normal typed-message markers (no "User action triggered"). Combine: starter prompts for turn 1, A2UI nav buttons every turn after.
+
+---
+
 ## Quick reference — GE A2UI gotchas
 
 | Area | Rule |
@@ -122,6 +169,11 @@ Validation also runs **server-side in Python** (in the callback), not via the LL
 | Native Sources panel | `grounding_metadata` with **both** `grounding_chunks` **and** `grounding_supports` (byte-offset segments). |
 | "User action triggered." | Uneditable; mitigate by prepending the chosen question as a quote. |
 | `weight` property | Documented but unverified in GE chat; currently omitted (revisit later). |
+| Custom components | GE renders the **standard catalog only** — `GoogleMap`/`WebFrameUrl` etc. need a registered custom catalog. |
+| Input binding | Dropdown/slider/date-time bind to flat paths; echo the submitted value server-side (`demo_submitted`). |
+| **Images** | **Do not render in this GE env** — external URLs error/500, `data:` URIs fail, `data:` in markdown breaks the surface. Avoid entirely. |
+| Markdown in `Text` | Bold / italic / links render. Backticks render **literally**. Images do **not** render. |
+| Starter prompts | GE assistant config (not agent code); clicked ones arrive as real message text. |
 
 ---
 
