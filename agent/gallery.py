@@ -528,14 +528,20 @@ def image_messages() -> list[dict]:
             },
         },
         _text("header", "Image component", usage_hint="h4"),
-        # EXPERIMENT: the Image component won't render in GE (payload delivered
-        # correctly per network inspection, but GE's CSP blocks remote hosts AND
-        # data: URIs for <Image>). Try a markdown image inside a Text instead —
-        # GE renders markdown in Text, so this exercises a different code path.
-        _text("image", f"![A2UI demo image]({DEMO_IMAGE_DATA_URI})"),
+        # DIAGNOSTIC: mixed markdown in one Text so we can see WHICH parts GE
+        # renders. If bold/italic/link show but the images don't → GE blocks
+        # images in markdown too (CSP). The <Image> component already failed
+        # (payload was delivered correctly per network inspection).
+        _text(
+            "image",
+            "**Bold works.** _Italic works._ "
+            "[Link works.](https://github.com/google/a2ui)\n\n"
+            "Data-URI image below (blank if GE blocks data: images):\n\n"
+            f"![data-uri image]({DEMO_IMAGE_DATA_URI})",
+        ),
         _text(
             "caption",
-            "Rendered via markdown image in a Text component (data URI, no external URL).",
+            "Markdown diagnostic — checking which markdown features GE renders in Text.",
             usage_hint="caption",
         ),
     ]

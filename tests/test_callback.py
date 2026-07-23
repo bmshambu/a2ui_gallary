@@ -266,7 +266,7 @@ class TestNewComponents:
             for su in parts if "surfaceUpdate" in su
             for c in su["surfaceUpdate"]["components"]
         ]
-        assert "![A2UI demo image](data:image/png;base64," in blob
+        assert "![data-uri image](data:image/png;base64," in blob
 
     def test_each_new_component_is_three_dataparts(self):
         for marker in ("choice", "slider", "datetime", "image", "tabs"):
