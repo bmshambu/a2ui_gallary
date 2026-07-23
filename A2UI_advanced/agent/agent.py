@@ -184,7 +184,15 @@ def _append_step(callback_context: CallbackContext, llm_response: LlmResponse):
     callback_context.state["booking"] = booking
     callback_context.state["step"] = step
 
-    _set_text(content, STEP_TEXT.get(step, ""))
+    text = STEP_TEXT.get(step, "")
+    # Echo what the user clicked as a quote (GE's "User action triggered." bubble
+    # is uneditable, so this keeps the transcript readable).
+    if action:
+        echo = concierge.action_echo(action, booking)
+        if echo:
+            text = f"> {echo}\n\n{text}"
+    _set_text(content, text)
+
     for message in STEP_BUILDERS[step](booking):
         content.parts.append(to_genai_part(message))
     return llm_response

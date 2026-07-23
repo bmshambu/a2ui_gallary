@@ -230,3 +230,17 @@ class TestCallback:
         _append_step(_make_ctx(state, {"name": "start_reservation", "context": {}}), resp)
         surface_updates = [m for m in _a2ui_parts(resp) if "surfaceUpdate" in m]
         assert len(surface_updates) == 1  # exactly one step surface
+
+    def test_click_is_echoed_as_quote(self):
+        state = {"step": "results", "booking": dict(DEFAULT_BOOKING)}
+        action = {"name": "select_restaurant", "context": {"restaurant_id": "sakura-house"}}
+        resp = _make_resp("ok")
+        _append_step(_make_ctx(state, action), resp)
+        text = resp.content.parts[0].text
+        assert text.startswith("> Selected Sakura House")
+
+    def test_first_turn_has_no_echo(self):
+        state = {}
+        resp = _make_resp("hi")
+        _append_step(_make_ctx(state, None), resp)
+        assert not resp.content.parts[0].text.startswith(">")

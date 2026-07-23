@@ -146,9 +146,13 @@ def results_step(booking: dict) -> list[dict]:
     components.append(_text("summary", f"{len(matches)} match your search — pick one to see details."))
 
     for i, r in enumerate(matches):
-        row, info, meta, pick = f"row_{i}", f"info_{i}", f"meta_{i}", f"pick_{i}"
-        children.append(row)
+        card, row, info, meta, pick = (
+            f"card_{i}", f"row_{i}", f"info_{i}", f"meta_{i}", f"pick_{i}"
+        )
+        children.append(card)
         components += [
+            # Each restaurant in its own Card → a boxed tile
+            {"id": card, "component": {"Card": {"child": row}}},
             {
                 "id": row,
                 "component": {
@@ -163,7 +167,7 @@ def results_step(booking: dict) -> list[dict]:
                 "id": info,
                 "component": {"Column": {"alignment": "start", "children": {"explicitList": [f"name_{i}", meta]}}},
             },
-            _text(f"name_{i}", f"**{r['name']}**"),
+            _text(f"name_{i}", f"**{r['name']}**", usage_hint="h4"),
             _text(
                 meta,
                 f"{r['cuisine'].title()} · ${r['avg_price']}/person · ★{r['rating']} · {r['seats']} seats",
@@ -208,45 +212,39 @@ def detail_step(booking: dict) -> list[dict]:
         },
     ]
 
-    # Overview tab
-    components += [
-        {"id": "t_overview", "component": {"Column": {"alignment": "start", "children": {"explicitList": ["ov_desc", "ov_meta"]}}}},
-        _text("ov_desc", r["description"]),
-        _text("ov_meta", f"★ {r['rating']} · ~${r['avg_price']}/person · {r['seats']} seats free", usage_hint="caption"),
-    ]
-
-    # Menu tab — one line per dish
-    menu_ids = [f"dish_{i}" for i in range(len(r["menu"]))]
-    components.append(
-        {"id": "t_menu", "component": {"Column": {"alignment": "start", "children": {"explicitList": menu_ids}}}}
+    # Overview tab — one markdown block
+    overview_md = (
+        f"{r['description']}\n\n"
+        f"**★ {r['rating']}**  ·  ~${r['avg_price']} / person  ·  {r['seats']} seats free"
     )
-    for i, dish in enumerate(r["menu"]):
-        components.append(_text(f"dish_{i}", f"**{dish['name']}** — ${dish['price']:.2f}"))
+    components.append(_text("t_overview", overview_md))
 
-    # Reviews tab — text lines + a References modal listing the review sources
-    review_ids = [f"rev_{i}" for i in range(len(r["reviews"]))]
-    components.append(
-        {"id": "t_reviews", "component": {"Column": {"alignment": "start", "children": {"explicitList": review_ids + ["rev_modal"]}}}}
+    # Menu tab — a markdown bullet list
+    menu_md = "\n".join(
+        f"- **{dish['name']}** — ${dish['price']:.2f}" for dish in r["menu"]
     )
-    for i, rev in enumerate(r["reviews"]):
-        components.append(_text(f"rev_{i}", f"“{rev['text']}”", usage_hint="caption"))
-    # Modal: full review sources by id
+    components.append(_text("t_menu", menu_md))
+
+    # Reviews tab — markdown quotes + a References modal for the sources by id
+    reviews_md = "\n\n".join(f"> {rev['text']}" for rev in r["reviews"])
     components += [
+        {"id": "t_reviews", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_quotes", "rev_modal"]}}}},
+        _text("rev_quotes", reviews_md),
         {"id": "rev_modal", "component": {"Modal": {"entryPointChild": "rev_entry", "contentChild": "rev_card"}}},
-        _text("rev_entry", "📄 View review sources"),
+        _text("rev_entry", "📄 **View review sources**"),
         {"id": "rev_card", "component": {"Card": {"child": "rev_content"}}},
-        {"id": "rev_content", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_hdr"] + [f"revsrc_{i}" for i in range(len(r["reviews"]))]}}}},
+        {"id": "rev_content", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_hdr", "rev_srcs"]}}}},
         _text("rev_hdr", "Review sources", usage_hint="h4"),
+        _text(
+            "rev_srcs",
+            "\n\n".join(f"**{rev['id']}**  \n{rev['text']}" for rev in r["reviews"]),
+        ),
     ]
-    for i, rev in enumerate(r["reviews"]):
-        components.append(_text(f"revsrc_{i}", f"**{rev['id']}**\n\n{rev['text']}"))
 
-    # Location tab
-    components += [
-        {"id": "t_location", "component": {"Column": {"alignment": "start", "children": {"explicitList": ["loc_addr", "loc_hours"]}}}},
-        _text("loc_addr", f"📍 {r['address']}"),
-        _text("loc_hours", r["hours"], usage_hint="caption"),
-    ]
+    # Location tab — one markdown block
+    components.append(
+        _text("t_location", f"📍 **{r['address']}**\n\n🕐 {r['hours']}")
+    )
 
     # Action buttons row: Reserve + Back
     components.append(
@@ -311,6 +309,29 @@ def confirmation_step(booking: dict) -> list[dict]:
     ]
     components += _button("new", "Start a new search", "new_search", [])
     return _messages(sid, components, {})
+
+
+_ACTION_LABELS = {
+    "start_reservation": "Reserve a table",
+    "back_to_results": "Back to results",
+    "edit_preferences": "Adjust search",
+    "confirm_reservation": "Confirm reservation",
+    "new_search": "Start a new search",
+}
+
+
+def action_echo(action: dict, booking: dict) -> str | None:
+    """Readable label of what the user just clicked — GE's 'User action
+    triggered.' bubble can't be changed, so the reply opens with this quote."""
+    name = action.get("name")
+    if name == "select_restaurant":
+        r = data.get(booking.get("restaurant_id") or "")
+        return f"Selected {r['name']}" if r else "Selected a restaurant"
+    if name == "find_tables":
+        cu = booking.get("cuisine") or []
+        cuisines = ", ".join(c.title() for c in cu) if cu else "Any cuisine"
+        return f"Find tables · {cuisines} · ≤ ${booking.get('budget', 50)}/person"
+    return _ACTION_LABELS.get(name)
 
 
 def confirmation_summary(booking: dict) -> str:
