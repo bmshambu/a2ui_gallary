@@ -236,23 +236,33 @@ def detail_step(booking: dict) -> list[dict]:
         },
     ]
 
-    # Overview tab — markdown block
-    components.append(_text(
-        "t_overview",
-        f"{r['description']}\n\n**★ {r['rating']}**  ·  ~${r['avg_price']} / person  ·  {r['seats']} seats free",
-    ))
+    # Each tab: a header (h4) + Divider + content — same structure as the
+    # confirmation receipt, so the tabs read cleanly instead of a bare block.
 
-    # Menu tab — EXPERIMENT: a data-bound List template. `menu_item` is the
-    # repeated template; it binds to `line` on each element of /menu.
+    # Overview tab
     components += [
-        {"id": "t_menu", "component": {"List": {"children": {"template": {"dataBinding": "/menu", "componentId": "menu_item"}}}}},
+        {"id": "t_overview", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["ov_head", "ov_div", "ov_desc", "ov_stats"]}}}},
+        _text("ov_head", "About", usage_hint="h4"),
+        _divider("ov_div"),
+        _text("ov_desc", r["description"]),
+        _text("ov_stats", f"**★ {r['rating']}**  ·  ~${r['avg_price']} / person  ·  {r['seats']} seats free", usage_hint="caption"),
+    ]
+
+    # Menu tab — header + divider + data-bound List template (EXPERIMENT)
+    components += [
+        {"id": "t_menu", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["menu_head", "menu_div", "menu_list"]}}}},
+        _text("menu_head", "Menu", usage_hint="h4"),
+        _divider("menu_div"),
+        {"id": "menu_list", "component": {"List": {"children": {"template": {"dataBinding": "/menu", "componentId": "menu_item"}}}}},
         {"id": "menu_item", "component": {"Text": {"text": {"path": "line"}}}},
     ]
 
-    # Reviews tab — markdown quotes + References modal
+    # Reviews tab — header + divider + quotes + References modal
     reviews_md = "\n\n".join(f"> {rev['text']}" for rev in r["reviews"])
     components += [
-        {"id": "t_reviews", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_quotes", "rev_modal"]}}}},
+        {"id": "t_reviews", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_head", "rev_div", "rev_quotes", "rev_modal"]}}}},
+        _text("rev_head", "What diners say", usage_hint="h4"),
+        _divider("rev_div"),
         _text("rev_quotes", reviews_md),
         {"id": "rev_modal", "component": {"Modal": {"entryPointChild": "rev_entry", "contentChild": "rev_card"}}},
         _text("rev_entry", "📄 **View review sources**"),
@@ -262,11 +272,15 @@ def detail_step(booking: dict) -> list[dict]:
         _text("rev_srcs", "\n\n".join(f"**{rev['id']}**  \n{rev['text']}" for rev in r["reviews"])),
     ]
 
-    # Location tab — icon + address markdown
+    # Location tab — header + divider + icon/address + hours
     components += [
-        {"id": "t_location", "component": {"Row": {"alignment": "center", "distribution": "start", "children": {"explicitList": ["loc_icon", "loc_text"]}}}},
+        {"id": "t_location", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["loc_head", "loc_div", "loc_row", "loc_hours"]}}}},
+        _text("loc_head", "Find us", usage_hint="h4"),
+        _divider("loc_div"),
+        {"id": "loc_row", "component": {"Row": {"alignment": "center", "distribution": "start", "children": {"explicitList": ["loc_icon", "loc_addr"]}}}},
         _icon("loc_icon", "place"),
-        _text("loc_text", f"**{r['address']}**\n\n🕐 {r['hours']}"),
+        _text("loc_addr", f"**{r['address']}**"),
+        _text("loc_hours", f"🕐 {r['hours']}", usage_hint="caption"),
     ]
 
     # Action row: primary Reserve + secondary Back
@@ -350,7 +364,7 @@ def confirmation_summary(booking: dict) -> str:
     if booking.get("res_name"):
         lines.append(f"👤 {booking['res_name']}")
     if booking.get("res_contact"):
-        lines.append(f"✉️ {booking['res_contact']}")
+        lines.append(f"📞 {booking['res_contact']}")
     if booking.get("requests"):
         lines.append(f"📝 {booking['requests']}")
     return "\n\n".join(lines)
