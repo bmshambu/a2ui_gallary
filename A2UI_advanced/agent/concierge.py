@@ -4,10 +4,25 @@ Each function returns the three-message sequence (surfaceUpdate / dataModelUpdat
 / beginRendering) for one step, and takes the current `booking` dict so it can
 prefill inputs and render selections. Input components bind to FLAT top-level
 data-model keys (GE writes edits back only to single-segment paths).
+
+Enhancements over the basic flow:
+  - progress indicator (● ○) atop every step
+  - Icon components on step titles / labels  [EXPERIMENT — unverified in GE]
+  - CheckBox filters + a min-rating Slider on Preferences
+  - secondary (primary:false) buttons for Back / Adjust / New search
+  - Dividers for structure; receipt-style Confirmation
+  - Menu rendered via a data-bound List template  [EXPERIMENT — unverified in GE]
 """
 import uuid
 
 from . import data
+
+# ── flow steps (for the progress indicator) ──────────────────────────────────
+STEPS = ["preferences", "results", "detail", "reservation", "confirmation"]
+STEP_NAMES = {
+    "preferences": "Preferences", "results": "Results", "detail": "Details",
+    "reservation": "Reservation", "confirmation": "Confirmed",
+}
 
 
 def _surface(prefix: str) -> str:
@@ -21,44 +36,36 @@ def _text(comp_id: str, text: str, usage_hint: str | None = None) -> dict:
     return {"id": comp_id, "component": {"Text": props}}
 
 
-def _button(comp_id: str, label: str, action: str, context: list[dict]) -> list[dict]:
-    """A primary Button + its Text label. `context` is a list of {key, value}."""
+def _icon(comp_id: str, name: str) -> dict:
+    # EXPERIMENT: GE Icon component. If icon names aren't in GE's set it simply
+    # renders nothing (the adjacent title Text still shows) — degrades gracefully.
+    return {"id": comp_id, "component": {"Icon": {"name": {"literalString": name}}}}
+
+
+def _divider(comp_id: str) -> dict:
+    return {"id": comp_id, "component": {"Divider": {"axis": "horizontal"}}}
+
+
+def _checkbox(comp_id: str, label: str, path: str) -> dict:
+    return {
+        "id": comp_id,
+        "component": {"CheckBox": {"label": {"literalString": label}, "value": {"path": path}}},
+    }
+
+
+def _button(comp_id: str, label: str, action: str, context: list[dict], primary: bool = True) -> list[dict]:
     return [
         {
             "id": comp_id,
             "component": {
                 "Button": {
                     "child": f"{comp_id}_lbl",
-                    "primary": True,
+                    "primary": primary,
                     "action": {"name": action, "context": context},
                 }
             },
         },
         _text(f"{comp_id}_lbl", label),
-    ]
-
-
-def _card(children: list[str]) -> list[dict]:
-    """Standard root Card > Column wrapper; caller supplies child ids."""
-    return [
-        {"id": "root", "component": {"Card": {"child": "col"}}},
-        {
-            "id": "col",
-            "component": {
-                "Column": {
-                    "alignment": "stretch",
-                    "children": {"explicitList": children},
-                }
-            },
-        },
-    ]
-
-
-def _messages(surface_id: str, components: list[dict], data_model: dict) -> list[dict]:
-    return [
-        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
-        {"dataModelUpdate": {"surfaceId": surface_id, "contents": data_model}},
-        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
     ]
 
 
@@ -70,12 +77,42 @@ def _choice(comp_id: str, path: str, options: list[dict], max_sel: int) -> dict:
                 "selections": {"path": path},
                 "maxAllowedSelections": max_sel,
                 "options": [
-                    {"label": {"literalString": o["label"]}, "value": o["value"]}
-                    for o in options
+                    {"label": {"literalString": o["label"]}, "value": o["value"]} for o in options
                 ],
             }
         },
     }
+
+
+def _header(step: str, icon_name: str, title: str) -> list[dict]:
+    """Progress indicator + an icon+title bar. Adds ids: progress, titlebar,
+    title_icon, title. Callers put ['progress', 'titlebar', ...] first."""
+    i = STEPS.index(step)
+    dots = " ".join("●" if j <= i else "○" for j in range(len(STEPS)))
+    return [
+        _text("progress", f"{dots}   Step {i + 1} of {len(STEPS)} · {STEP_NAMES[step]}", usage_hint="caption"),
+        {
+            "id": "titlebar",
+            "component": {"Row": {"alignment": "center", "distribution": "start", "children": {"explicitList": ["title_icon", "title"]}}},
+        },
+        _icon("title_icon", icon_name),
+        _text("title", title, usage_hint="h3"),
+    ]
+
+
+def _messages(surface_id: str, components: list[dict], data_model: dict) -> list[dict]:
+    return [
+        {"surfaceUpdate": {"surfaceId": surface_id, "components": components}},
+        {"dataModelUpdate": {"surfaceId": surface_id, "contents": data_model}},
+        {"beginRendering": {"surfaceId": surface_id, "root": "root"}},
+    ]
+
+
+def _root(children: list[str]) -> list[dict]:
+    return [
+        {"id": "root", "component": {"Card": {"child": "col"}}},
+        {"id": "col", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": children}}}},
+    ]
 
 
 # ── Step 1: Preferences ──────────────────────────────────────────────────────
@@ -83,27 +120,28 @@ def _choice(comp_id: str, path: str, options: list[dict], max_sel: int) -> dict:
 def preferences_step(booking: dict) -> list[dict]:
     sid = _surface("prefs")
     children = [
-        "title", "cuisine_lbl", "cuisine", "dietary_lbl", "dietary",
-        "budget_lbl", "budget", "when_lbl", "when", "find",
+        "progress", "titlebar",
+        "cuisine_lbl", "cuisine", "dietary_lbl", "dietary",
+        "budget_lbl", "budget", "rating_lbl", "min_rating",
+        "feat_lbl", "f_outdoor", "f_open", "f_large",
+        "when_lbl", "when", "div", "find",
     ]
-    components = _card(children) + [
-        _text("title", "Find a table", usage_hint="h3"),
+    components = _root(children) + _header("preferences", "restaurant", "Find a table") + [
         _text("cuisine_lbl", "Cuisine", usage_hint="caption"),
         _choice("cuisine", "/cuisine", data.CUISINES, 4),
         _text("dietary_lbl", "Dietary needs", usage_hint="caption"),
         _choice("dietary", "/dietary", data.DIETARY, 3),
         _text("budget_lbl", "Max budget per person ($)", usage_hint="caption"),
-        {
-            "id": "budget",
-            "component": {"Slider": {"value": {"path": "/budget"}, "minValue": 20, "maxValue": 100}},
-        },
+        {"id": "budget", "component": {"Slider": {"value": {"path": "/budget"}, "minValue": 20, "maxValue": 100}}},
+        _text("rating_lbl", "Minimum rating (★)", usage_hint="caption"),
+        {"id": "min_rating", "component": {"Slider": {"value": {"path": "/min_rating"}, "minValue": 0, "maxValue": 5}}},
+        _text("feat_lbl", "Must have", usage_hint="caption"),
+        _checkbox("f_outdoor", "Outdoor seating", "/f_outdoor"),
+        _checkbox("f_open", "Open now", "/f_open"),
+        _checkbox("f_large", "Seats a large group", "/f_large"),
         _text("when_lbl", "Date & time", usage_hint="caption"),
-        {
-            "id": "when",
-            "component": {
-                "DateTimeInput": {"value": {"path": "/when"}, "enableDate": True, "enableTime": True}
-            },
-        },
+        {"id": "when", "component": {"DateTimeInput": {"value": {"path": "/when"}, "enableDate": True, "enableTime": True}}},
+        _divider("div"),
     ]
     components += _button(
         "find", "Find tables", "find_tables",
@@ -111,6 +149,10 @@ def preferences_step(booking: dict) -> list[dict]:
             {"key": "cuisine", "value": {"path": "/cuisine"}},
             {"key": "dietary", "value": {"path": "/dietary"}},
             {"key": "budget", "value": {"path": "/budget"}},
+            {"key": "min_rating", "value": {"path": "/min_rating"}},
+            {"key": "outdoor", "value": {"path": "/f_outdoor"}},
+            {"key": "open_now", "value": {"path": "/f_open"}},
+            {"key": "large", "value": {"path": "/f_large"}},
             {"key": "when", "value": {"path": "/when"}},
         ],
     )
@@ -118,6 +160,10 @@ def preferences_step(booking: dict) -> list[dict]:
         "cuisine": booking.get("cuisine", []),
         "dietary": booking.get("dietary", []),
         "budget": booking.get("budget", 50),
+        "min_rating": booking.get("min_rating", 0),
+        "f_outdoor": booking.get("outdoor", False),
+        "f_open": booking.get("open_now", False),
+        "f_large": booking.get("large", False),
         "when": booking.get("when", ""),
     }
     return _messages(sid, components, data_model)
@@ -128,60 +174,39 @@ def preferences_step(booking: dict) -> list[dict]:
 def results_step(booking: dict) -> list[dict]:
     sid = _surface("results")
     matches = data.search(
-        booking.get("cuisine", []), booking.get("dietary", []), booking.get("budget", 100)
+        booking.get("cuisine", []), booking.get("dietary", []), booking.get("budget", 100),
+        booking.get("min_rating", 0), booking.get("outdoor", False),
+        booking.get("open_now", False), booking.get("large", False),
     )
 
-    children = ["title"]
-    components = [_text("title", "Available tables", usage_hint="h3")]
+    children = ["progress", "titlebar"]
+    components = _root(children) + _header("results", "search", "Available tables")
 
     if not matches:
         children += ["empty", "edit"]
-        components.append(
-            _text("empty", "No restaurants match those filters. Try widening your search.")
-        )
-        components += _button("edit", "Adjust search", "edit_preferences", [])
-        return _messages(sid, _card(children) + components, {})
+        components.append(_text("empty", "No restaurants match those filters. Try widening your search."))
+        components += _button("edit", "Adjust search", "edit_preferences", [], primary=False)
+        return _messages(sid, components, {})
 
     children.append("summary")
     components.append(_text("summary", f"{len(matches)} match your search — pick one to see details."))
 
     for i, r in enumerate(matches):
-        card, row, info, meta, pick = (
-            f"card_{i}", f"row_{i}", f"info_{i}", f"meta_{i}", f"pick_{i}"
-        )
+        card, row, info, meta, pick = f"card_{i}", f"row_{i}", f"info_{i}", f"meta_{i}", f"pick_{i}"
         children.append(card)
         components += [
-            # Each restaurant in its own Card → a boxed tile
             {"id": card, "component": {"Card": {"child": row}}},
-            {
-                "id": row,
-                "component": {
-                    "Row": {
-                        "alignment": "center",
-                        "distribution": "spaceBetween",
-                        "children": {"explicitList": [info, pick]},
-                    }
-                },
-            },
-            {
-                "id": info,
-                "component": {"Column": {"alignment": "start", "children": {"explicitList": [f"name_{i}", meta]}}},
-            },
+            {"id": row, "component": {"Row": {"alignment": "center", "distribution": "spaceBetween", "children": {"explicitList": [info, pick]}}}},
+            {"id": info, "component": {"Column": {"alignment": "start", "children": {"explicitList": [f"name_{i}", meta]}}}},
             _text(f"name_{i}", f"**{r['name']}**", usage_hint="h4"),
-            _text(
-                meta,
-                f"{r['cuisine'].title()} · ${r['avg_price']}/person · ★{r['rating']} · {r['seats']} seats",
-                usage_hint="caption",
-            ),
+            _text(meta, f"{r['cuisine'].title()} · ${r['avg_price']}/person · ★{r['rating']} · {r['seats']} seats", usage_hint="caption"),
         ]
-        components += _button(
-            pick, "Select", "select_restaurant",
-            [{"key": "restaurant_id", "value": {"literalString": r["id"]}}],
-        )
+        components += _button(pick, "Select", "select_restaurant",
+                              [{"key": "restaurant_id", "value": {"literalString": r["id"]}}])
 
     children.append("edit")
-    components += _button("edit", "← Adjust search", "edit_preferences", [])
-    return _messages(sid, _card(children) + components, {})
+    components += _button("edit", "← Adjust search", "edit_preferences", [], primary=False)
+    return _messages(sid, components, {})
 
 
 # ── Step 3: Restaurant detail (Tabs) ─────────────────────────────────────────
@@ -190,13 +215,12 @@ def detail_step(booking: dict) -> list[dict]:
     sid = _surface("detail")
     r = data.get(booking.get("restaurant_id") or "")
     if not r:
-        components = _card(["oops", "back"]) + [_text("oops", "That restaurant is no longer available.")]
-        components += _button("back", "← Back to results", "back_to_results", [])
+        components = _root(["oops", "back"]) + [_text("oops", "That restaurant is no longer available.")]
+        components += _button("back", "← Back to results", "back_to_results", [], primary=False)
         return _messages(sid, components, {})
 
-    children = ["title", "tabs", "actions"]
-    components = _card(children) + [
-        _text("title", r["name"], usage_hint="h3"),
+    children = ["progress", "titlebar", "tabs", "actions"]
+    components = _root(children) + _header("detail", "restaurant_menu", r["name"]) + [
         {
             "id": "tabs",
             "component": {
@@ -212,20 +236,20 @@ def detail_step(booking: dict) -> list[dict]:
         },
     ]
 
-    # Overview tab — one markdown block
-    overview_md = (
-        f"{r['description']}\n\n"
-        f"**★ {r['rating']}**  ·  ~${r['avg_price']} / person  ·  {r['seats']} seats free"
-    )
-    components.append(_text("t_overview", overview_md))
+    # Overview tab — markdown block
+    components.append(_text(
+        "t_overview",
+        f"{r['description']}\n\n**★ {r['rating']}**  ·  ~${r['avg_price']} / person  ·  {r['seats']} seats free",
+    ))
 
-    # Menu tab — a markdown bullet list
-    menu_md = "\n".join(
-        f"- **{dish['name']}** — ${dish['price']:.2f}" for dish in r["menu"]
-    )
-    components.append(_text("t_menu", menu_md))
+    # Menu tab — EXPERIMENT: a data-bound List template. `menu_item` is the
+    # repeated template; it binds to `line` on each element of /menu.
+    components += [
+        {"id": "t_menu", "component": {"List": {"children": {"template": {"dataBinding": "/menu", "componentId": "menu_item"}}}}},
+        {"id": "menu_item", "component": {"Text": {"text": {"path": "line"}}}},
+    ]
 
-    # Reviews tab — markdown quotes + a References modal for the sources by id
+    # Reviews tab — markdown quotes + References modal
     reviews_md = "\n\n".join(f"> {rev['text']}" for rev in r["reviews"])
     components += [
         {"id": "t_reviews", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_quotes", "rev_modal"]}}}},
@@ -235,24 +259,25 @@ def detail_step(booking: dict) -> list[dict]:
         {"id": "rev_card", "component": {"Card": {"child": "rev_content"}}},
         {"id": "rev_content", "component": {"Column": {"alignment": "stretch", "children": {"explicitList": ["rev_hdr", "rev_srcs"]}}}},
         _text("rev_hdr", "Review sources", usage_hint="h4"),
-        _text(
-            "rev_srcs",
-            "\n\n".join(f"**{rev['id']}**  \n{rev['text']}" for rev in r["reviews"]),
-        ),
+        _text("rev_srcs", "\n\n".join(f"**{rev['id']}**  \n{rev['text']}" for rev in r["reviews"])),
     ]
 
-    # Location tab — one markdown block
-    components.append(
-        _text("t_location", f"📍 **{r['address']}**\n\n🕐 {r['hours']}")
-    )
+    # Location tab — icon + address markdown
+    components += [
+        {"id": "t_location", "component": {"Row": {"alignment": "center", "distribution": "start", "children": {"explicitList": ["loc_icon", "loc_text"]}}}},
+        _icon("loc_icon", "place"),
+        _text("loc_text", f"**{r['address']}**\n\n🕐 {r['hours']}"),
+    ]
 
-    # Action buttons row: Reserve + Back
+    # Action row: primary Reserve + secondary Back
     components.append(
         {"id": "actions", "component": {"Row": {"alignment": "center", "distribution": "spaceBetween", "children": {"explicitList": ["reserve", "back"]}}}}
     )
     components += _button("reserve", "Reserve a table", "start_reservation", [])
-    components += _button("back", "← Back to results", "back_to_results", [])
-    return _messages(sid, components, {})
+    components += _button("back", "← Back to results", "back_to_results", [], primary=False)
+
+    data_model = {"menu": [{"line": f"**{d['name']}** — ${d['price']:.2f}"} for d in r["menu"]]}
+    return _messages(sid, components, data_model)
 
 
 # ── Step 4: Reservation form ─────────────────────────────────────────────────
@@ -262,11 +287,11 @@ def reservation_step(booking: dict) -> list[dict]:
     r = data.get(booking.get("restaurant_id") or "")
     name = r["name"] if r else "your table"
     children = [
-        "title", "name_lbl", "res_name", "contact_lbl", "res_contact",
-        "party_lbl", "party_size", "req_lbl", "requests", "when_lbl", "res_when", "confirm",
+        "progress", "titlebar",
+        "name_lbl", "res_name", "contact_lbl", "res_contact",
+        "party_lbl", "party_size", "req_lbl", "requests", "when_lbl", "res_when", "div", "confirm",
     ]
-    components = _card(children) + [
-        _text("title", f"Reserve at {name}", usage_hint="h3"),
+    components = _root(children) + _header("reservation", "event", f"Reserve at {name}") + [
         _text("name_lbl", "Your name", usage_hint="caption"),
         {"id": "res_name", "component": {"TextField": {"label": {"literalString": "Full name"}, "text": {"path": "/res_name"}}}},
         _text("contact_lbl", "Email or phone", usage_hint="caption"),
@@ -277,6 +302,7 @@ def reservation_step(booking: dict) -> list[dict]:
         {"id": "requests", "component": {"TextField": {"label": {"literalString": "Requests"}, "text": {"path": "/requests"}}}},
         _text("when_lbl", "Date & time", usage_hint="caption"),
         {"id": "res_when", "component": {"DateTimeInput": {"value": {"path": "/res_when"}, "enableDate": True, "enableTime": True}}},
+        _divider("div"),
     ]
     components += _button(
         "confirm", "Confirm reservation", "confirm_reservation",
@@ -298,18 +324,39 @@ def reservation_step(booking: dict) -> list[dict]:
     return _messages(sid, components, data_model)
 
 
-# ── Step 5: Confirmation ─────────────────────────────────────────────────────
+# ── Step 5: Confirmation (receipt style) ─────────────────────────────────────
 
 def confirmation_step(booking: dict) -> list[dict]:
     sid = _surface("confirm")
-    children = ["title", "summary", "new"]
-    components = _card(children) + [
-        _text("title", "Reservation confirmed ✅", usage_hint="h3"),
+    children = ["progress", "titlebar", "div1", "summary", "div2", "new"]
+    components = _root(children) + _header("confirmation", "check_circle", "Reservation confirmed") + [
+        _divider("div1"),
         _text("summary", confirmation_summary(booking)),
+        _divider("div2"),
     ]
-    components += _button("new", "Start a new search", "new_search", [])
+    components += _button("new", "Start a new search", "new_search", [], primary=False)
     return _messages(sid, components, {})
 
+
+def confirmation_summary(booking: dict) -> str:
+    r = data.get(booking.get("restaurant_id") or "")
+    lines = []
+    if r:
+        lines.append(f"**{r['name']}** — {r['cuisine'].title()}")
+        lines.append(f"📍 {r['address']}")
+    if booking.get("res_when") or booking.get("when"):
+        lines.append(f"🗓️ {booking.get('res_when') or booking.get('when')}")
+    lines.append(f"👥 Party of {booking.get('party_size', 2)}")
+    if booking.get("res_name"):
+        lines.append(f"👤 {booking['res_name']}")
+    if booking.get("res_contact"):
+        lines.append(f"✉️ {booking['res_contact']}")
+    if booking.get("requests"):
+        lines.append(f"📝 {booking['requests']}")
+    return "\n\n".join(lines)
+
+
+# ── Click echo ───────────────────────────────────────────────────────────────
 
 _ACTION_LABELS = {
     "start_reservation": "Reserve a table",
@@ -332,21 +379,3 @@ def action_echo(action: dict, booking: dict) -> str | None:
         cuisines = ", ".join(c.title() for c in cu) if cu else "Any cuisine"
         return f"Find tables · {cuisines} · ≤ ${booking.get('budget', 50)}/person"
     return _ACTION_LABELS.get(name)
-
-
-def confirmation_summary(booking: dict) -> str:
-    r = data.get(booking.get("restaurant_id") or "")
-    lines = []
-    if r:
-        lines.append(f"**{r['name']}** — {r['cuisine'].title()}")
-        lines.append(f"📍 {r['address']}")
-    if booking.get("res_when") or booking.get("when"):
-        lines.append(f"🗓️ {booking.get('res_when') or booking.get('when')}")
-    lines.append(f"👥 Party of {booking.get('party_size', 2)}")
-    if booking.get("res_name"):
-        lines.append(f"👤 {booking['res_name']}")
-    if booking.get("res_contact"):
-        lines.append(f"✉️ {booking['res_contact']}")
-    if booking.get("requests"):
-        lines.append(f"📝 {booking['requests']}")
-    return "\n\n".join(lines)

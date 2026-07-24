@@ -127,13 +127,23 @@ class TestStepPayloads:
         msgs = concierge.preferences_step(DEFAULT_BOOKING)
         assert _roundtrip_ok(msgs)
         types = _types(msgs)
-        assert {"MultipleChoice", "Slider", "DateTimeInput", "Button"} <= set(types)
-        # two dropdowns (cuisine + dietary)
+        # dropdowns + two sliders (budget, rating) + checkboxes + date + icon + divider
+        assert {"MultipleChoice", "Slider", "DateTimeInput", "Button", "CheckBox", "Icon", "Divider"} <= set(types)
         assert types.count("MultipleChoice") == 2
+        assert types.count("Slider") == 2  # budget + min rating
+        assert types.count("CheckBox") == 3  # outdoor, open now, large group
+
+    def test_progress_indicator_present(self):
+        msgs = concierge.preferences_step(DEFAULT_BOOKING)
+        assert "progress" in _ids(msgs)
+        blob = str(msgs[0]["surfaceUpdate"]["components"])
+        assert "Step 1 of 5" in blob
 
     def test_preferences_flat_datamodel(self):
         dm = concierge.preferences_step(DEFAULT_BOOKING)[1]["dataModelUpdate"]["contents"]
-        assert set(dm) == {"cuisine", "dietary", "budget", "when"}  # all single-segment
+        # every key is a flat single-segment path (GE binding requirement)
+        assert dm and all("/" not in k for k in dm)
+        assert {"cuisine", "dietary", "budget", "min_rating", "when"} <= set(dm)
 
     def test_results_lists_matches_with_select_buttons(self):
         booking = {**DEFAULT_BOOKING, "cuisine": ["italian"], "budget": 100}
@@ -152,6 +162,19 @@ class TestStepPayloads:
         assert _roundtrip_ok(msgs)
         assert "Tabs" in _types(msgs)
         assert "reserve" in _ids(msgs) and "back" in _ids(msgs)
+
+    def test_detail_menu_is_list_template_bound_to_data(self):
+        msgs = concierge.detail_step(BOOKED)
+        assert "List" in _types(msgs)
+        # the /menu array is seeded in the data model for the template to repeat
+        dm = msgs[1]["dataModelUpdate"]["contents"]
+        assert "menu" in dm and isinstance(dm["menu"], list) and dm["menu"]
+
+    def test_extra_filters_narrow_search(self):
+        # open_now excludes Sakura House (open_now False)
+        booking = {**DEFAULT_BOOKING, "open_now": True}
+        names = [r["name"] for r in data.search([], [], 100, open_now=True)]
+        assert "Sakura House" not in names
 
     def test_reservation_form_and_flat_datamodel(self):
         msgs = concierge.reservation_step(BOOKED)

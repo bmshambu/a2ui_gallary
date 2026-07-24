@@ -76,7 +76,8 @@ def _current_user_content(callback_context):
 
 # ── flow state machine ───────────────────────────────────────────────────────
 DEFAULT_BOOKING = {
-    "cuisine": [], "dietary": [], "budget": 50, "when": "",
+    "cuisine": [], "dietary": [], "budget": 50, "min_rating": 0,
+    "outdoor": False, "open_now": False, "large": False, "when": "",
     "restaurant_id": None,
     "res_name": "", "res_contact": "", "party_size": 2, "requests": "",
 }
@@ -117,6 +118,10 @@ def _as_int(v, default):
         return default
 
 
+def _as_bool(v):
+    return v is True or str(v).lower() == "true"
+
+
 def advance(state, action) -> tuple[str, dict]:
     """Pure transition: (current state) + (userAction) → (next step, booking).
 
@@ -133,6 +138,10 @@ def advance(state, action) -> tuple[str, dict]:
         booking["cuisine"] = _as_list(ctx.get("cuisine"))
         booking["dietary"] = _as_list(ctx.get("dietary"))
         booking["budget"] = _as_int(ctx.get("budget"), 50)
+        booking["min_rating"] = _as_int(ctx.get("min_rating"), 0)
+        booking["outdoor"] = _as_bool(ctx.get("outdoor"))
+        booking["open_now"] = _as_bool(ctx.get("open_now"))
+        booking["large"] = _as_bool(ctx.get("large"))
         booking["when"] = str(ctx.get("when") or "")
         step = "results"
     elif name == "select_restaurant":

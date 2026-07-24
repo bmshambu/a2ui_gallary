@@ -127,6 +127,17 @@ RESTAURANTS = [
     },
 ]
 
+# Derived boolean features (fictional) for the CheckBox filters.
+_FEATURES = {
+    "bella-italia":    {"outdoor": True,  "open_now": True,  "large_ok": False},
+    "sakura-house":    {"outdoor": False, "open_now": False, "large_ok": False},
+    "el-fuego":        {"outdoor": True,  "open_now": True,  "large_ok": True},
+    "spice-route":     {"outdoor": False, "open_now": True,  "large_ok": True},
+    "trattoria-verde": {"outdoor": True,  "open_now": True,  "large_ok": True},
+}
+for _r in RESTAURANTS:
+    _r.update(_FEATURES[_r["id"]])
+
 _BY_ID = {r["id"]: r for r in RESTAURANTS}
 
 
@@ -134,10 +145,17 @@ def get(restaurant_id: str) -> dict | None:
     return _BY_ID.get(restaurant_id)
 
 
-def search(cuisines: list[str], dietary: list[str], max_budget: float) -> list[dict]:
-    """Filter restaurants by cuisine(s), dietary needs, and per-person budget.
-
-    Empty cuisine/dietary lists mean "no filter". Results sort by rating desc.
+def search(
+    cuisines: list[str],
+    dietary: list[str],
+    max_budget: float,
+    min_rating: float = 0,
+    outdoor: bool = False,
+    open_now: bool = False,
+    large: bool = False,
+) -> list[dict]:
+    """Filter restaurants by cuisine(s), dietary needs, budget, rating and the
+    boolean features. Empty/falsey filters mean "no filter". Sort by rating desc.
     """
     out = []
     for r in RESTAURANTS:
@@ -146,6 +164,14 @@ def search(cuisines: list[str], dietary: list[str], max_budget: float) -> list[d
         if dietary and not all(tag in r["dietary"] for tag in dietary):
             continue
         if max_budget and r["avg_price"] > max_budget:
+            continue
+        if min_rating and r["rating"] < min_rating:
+            continue
+        if outdoor and not r["outdoor"]:
+            continue
+        if open_now and not r["open_now"]:
+            continue
+        if large and not r["large_ok"]:
             continue
         out.append(r)
     return sorted(out, key=lambda r: r["rating"], reverse=True)
