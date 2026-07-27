@@ -378,6 +378,8 @@ _ACTION_LABELS = {
     "edit_preferences": "Adjust search",
     "confirm_reservation": "Confirm reservation",
     "new_search": "Start a new search",
+    "back_to_gallery": "All components",
+    "exit_gallery": "Back to booking",
 }
 
 
@@ -392,4 +394,7 @@ def action_echo(action: dict, booking: dict) -> str | None:
         cu = booking.get("cuisine") or []
         cuisines = ", ".join(c.title() for c in cu) if cu else "Any cuisine"
         return f"Find tables · {cuisines} · ≤ ${booking.get('budget', 50)}/person"
+    if name == "show_component":
+        comp = booking.get("demo_component") or ""
+        return f"Component · {comp}" if comp else "Component"
     return _ACTION_LABELS.get(name)

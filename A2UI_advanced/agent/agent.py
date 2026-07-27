@@ -20,7 +20,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
-from . import concierge
+from . import concierge, gallery
 from .a2ui import extract_user_action, to_genai_part
 
 # ── history scrub (identical approach to the gallery agent) ───────────────────
@@ -80,6 +80,7 @@ DEFAULT_BOOKING = {
     "outdoor": False, "open_now": False, "large": False, "when": "",
     "restaurant_id": None,
     "res_name": "", "res_contact": "", "party_size": 2, "requests": "",
+    "demo_component": "",
 }
 
 STEP_BUILDERS = {
@@ -88,6 +89,9 @@ STEP_BUILDERS = {
     "detail": concierge.detail_step,
     "reservation": concierge.reservation_step,
     "confirmation": concierge.confirmation_step,
+    # component-reference branch
+    "gallery": lambda booking: gallery.gallery_menu_step(),
+    "component": lambda booking: gallery.component_demo_step(booking.get("demo_component") or "slider"),
 }
 
 STEP_TEXT = {
@@ -96,6 +100,8 @@ STEP_TEXT = {
     "detail": "Explore the tabs, then reserve when you're ready.",
     "reservation": "Almost done — enter your details to book.",
     "confirmation": "🎉 You're all set — your booking is below.",
+    "gallery": "Here are the A2UI components this concierge uses — tap one to see it on its own.",
+    "component": "Here's that component in isolation.",
 }
 
 
@@ -163,7 +169,22 @@ def advance(state, action) -> tuple[str, dict]:
     elif name == "new_search":
         booking = dict(DEFAULT_BOOKING)
         step = "preferences"
+    elif name == "show_component":
+        booking["demo_component"] = str(ctx.get("component") or "")
+        step = "component"
+    elif name == "back_to_gallery":
+        step = "gallery"
+    elif name == "exit_gallery":
+        step = "preferences"
     return step, booking
+
+
+def _is_gallery_trigger(user_content) -> bool:
+    """True if the user's typed message asks to see the components used."""
+    if not user_content or not getattr(user_content, "parts", None):
+        return False
+    text = " ".join(p.text for p in user_content.parts if getattr(p, "text", None)).lower()
+    return "component" in text
 
 
 def _set_text(content, text: str) -> None:
@@ -188,8 +209,16 @@ def _append_step(callback_context: CallbackContext, llm_response: LlmResponse):
         if p.text:
             p.text = _ECHO_RE.sub("", p.text).rstrip()
 
-    action = extract_user_action(_current_user_content(callback_context))
-    step, booking = advance(callback_context.state, action)
+    user_content = _current_user_content(callback_context)
+    action = extract_user_action(user_content)
+    if action:
+        step, booking = advance(callback_context.state, action)
+    elif _is_gallery_trigger(user_content):
+        # typed message / starter prompt asking to see the components
+        booking = dict(callback_context.state.get("booking") or DEFAULT_BOOKING)
+        step = "gallery"
+    else:
+        step, booking = advance(callback_context.state, None)
     callback_context.state["booking"] = booking
     callback_context.state["step"] = step
 

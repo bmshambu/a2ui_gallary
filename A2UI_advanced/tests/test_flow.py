@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from google.adk.a2a.converters.part_converter import convert_genai_part_to_a2a_part
 from google.genai import types as genai_types
 
-from agent import concierge, data
+from agent import concierge, data, gallery
 from agent.a2ui import to_genai_part
 from agent.agent import DEFAULT_BOOKING, STEP_BUILDERS, _append_step, advance
 
@@ -200,16 +200,16 @@ def _make_resp(text: str) -> MagicMock:
     return resp
 
 
-def _make_ctx(state: dict, action: dict | None) -> MagicMock:
+def _make_ctx(state: dict, action: dict | None, user_text: str | None = None) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
-    if action is None:
-        ctx.user_content = None
+    if action is not None:
+        text = json.dumps({"userAction": action})
+        ctx.user_content = genai_types.Content(parts=[genai_types.Part(text=text)], role="user")
+    elif user_text is not None:
+        ctx.user_content = genai_types.Content(parts=[genai_types.Part(text=user_text)], role="user")
     else:
-        ua = json.dumps({"userAction": action})
-        ctx.user_content = genai_types.Content(
-            parts=[genai_types.Part(text=ua)], role="user"
-        )
+        ctx.user_content = None
     return ctx
 
 
@@ -267,3 +267,42 @@ class TestCallback:
         resp = _make_resp("hi")
         _append_step(_make_ctx(state, None), resp)
         assert not resp.content.parts[0].text.startswith(">")
+
+    def test_typed_show_components_opens_gallery(self):
+        state = {"step": "preferences", "booking": dict(DEFAULT_BOOKING)}
+        resp = _make_resp("ok")
+        _append_step(_make_ctx(state, None, user_text="Show me all the components used"), resp)
+        assert state["step"] == "gallery"
+        ids = [c["id"] for m in _a2ui_parts(resp) if "surfaceUpdate" in m
+               for c in m["surfaceUpdate"]["components"]]
+        assert any(i.startswith("c_") for i in ids)  # component buttons
+
+    def test_show_component_renders_that_demo(self):
+        state = {"step": "gallery", "booking": dict(DEFAULT_BOOKING)}
+        action = {"name": "show_component", "context": {"component": "slider"}}
+        resp = _make_resp("ok")
+        _append_step(_make_ctx(state, action), resp)
+        assert state["step"] == "component"
+        assert state["booking"]["demo_component"] == "slider"
+        types = [list(c["component"].keys())[0] for m in _a2ui_parts(resp) if "surfaceUpdate" in m
+                 for c in m["surfaceUpdate"]["components"]]
+        assert "Slider" in types
+
+
+class TestGalleryBranch:
+    def test_menu_lists_every_component(self):
+        msgs = gallery.gallery_menu_step()
+        assert _roundtrip_ok(msgs)
+        ids = _ids(msgs)
+        for key, _, _ in gallery.COMPONENTS:
+            assert f"c_{key}" in ids
+
+    @pytest.mark.parametrize("key,expected", [
+        ("slider", "Slider"), ("dropdown", "MultipleChoice"), ("checkbox", "CheckBox"),
+        ("datetime", "DateTimeInput"), ("textfield", "TextField"), ("tabs", "Tabs"),
+        ("modal", "Modal"), ("icons", "Icon"),
+    ])
+    def test_each_demo_renders_its_component(self, key, expected):
+        msgs = gallery.component_demo_step(key)
+        assert _roundtrip_ok(msgs)
+        assert expected in _types(msgs)
