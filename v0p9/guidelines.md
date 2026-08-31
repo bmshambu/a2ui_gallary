@@ -170,16 +170,34 @@ Living record of what we actually confirmed on GE, from the `v0p9/` Hello-Materi
   deploy under a distinct display name so it takes the *create* path. Not an A2UI issue.
 
 ### v0.9 rendering
-- ❌ **Attempt #1 — no version marker → GE rendered NOTHING.** DataPart `data` was
-  `{"createSurface": {...}}` with no version field. GE's renderer defaults to **v0.8 semantics**
-  (it looks for `surfaceUpdate`/`beginRendering`), doesn't recognize `createSurface`, and renders
-  only the text — no card, no buttons.
-- 🔄 **Attempt #2 — add `"version": "v0.9"`** as a sibling of `createSurface`/`updateComponents`
-  in each message's `data`. Hypothesis: this routes GE to the v0.9 renderer. **Testing — update
-  this line with the result.** Payload now: `{"version":"v0.9","createSurface":{…}}`.
+- ❌ **Attempt #1 — no version marker → GE rendered NOTHING** (text only). GE defaults to
+  **v0.8 semantics** (looks for `surfaceUpdate`/`beginRendering`), doesn't recognize `createSurface`.
+- ✅ **Attempt #2 — `"version": "v0.9"` (sibling of `createSurface`/`updateComponents`) WORKS.**
+  GE recognized v0.9 and tried to render — it advanced to a *specific catalog error* instead of
+  silence. **This version marker is REQUIRED for v0.9.**
+- ❌ **`catalogId: "material"` → GE error "Catalog not found: material".** `catalogId` must be the
+  catalog's **full URL** (it equals the catalog `$id`), and GE looks it up in a registry. The GE
+  docs' short `"material"` example does NOT work. **The Material catalog is GE-proprietary — its
+  catalogId URL is not in any public repo** (`google/A2UI` ships only the *basic* catalog).
+- ✅ **Basic catalog `catalogId` is public and GE-accepted:**
+  `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`
+- 🔄 **Attempt #3 — switched probe to the basic catalog.** Testing render. Basic gives Button
+  `variant` (default/primary/borderless) — real v0.9, though full colour/elevation needs the
+  (still-unknown) Material catalogId.
 
-### Still to confirm (once a card renders)
-- Does `catalogId: "material"` select the Material catalog, or is a full URL needed?
-- Do `MaterialButton` `appearance`/`color` actually paint (the styling win)?
-- Do `MaterialCard.children` / `MaterialColumn.children` (array) render the tree correctly?
-- Are `createSurface` + `updateComponents` enough (no render trigger), or is ordering/batching needed?
+### Basic catalog v0.9 component shapes (CONFIRMED from google/A2UI schema)
+| Component | Props |
+|---|---|
+| `Column` / `Row` | `children` (array of ids), `justify` (start/center/end/spaceBetween/…/stretch), `align` (start/center/end/stretch) |
+| `Card` | **`child`** (a SINGLE id — not `children`) |
+| `Text` | `text` (string), `variant` (h1–h5 / caption / body) |
+| `Button` | **`child`** (a Text id = the label — NOT `text`/`label`), `variant` (default/primary/borderless), `action` |
+| `Icon` | `name` |
+Basic catalog components (all): AudioPlayer, Button, Card, CheckBox, ChoicePicker, Column,
+DateTimeInput, Divider, Icon, Image, List, Modal, Row, Slider, Tabs, Text, TextField, Video.
+
+### Still to get / confirm
+- **The Material catalog's `catalogId` URL** — needed for colour/elevation. Ask the GE admin /
+  check the GE console, or a GE-provided sample; it's not public. Until then, basic catalog only.
+- Does the basic catalog render in GE end-to-end (attempt #3)? Do buttons/`variant` show?
+- Are `createSurface` + `updateComponents` enough (no render trigger)?

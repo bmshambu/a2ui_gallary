@@ -17,11 +17,11 @@ from google.genai import types as genai_types
 
 from agent.a2ui import to_genai_part
 from agent.agent import _append_surface, _is_a2ui_part, _strip_history
-from agent.hello import CATALOG_MATERIAL, hello_material_messages
+from agent.hello import CATALOG_BASIC, hello_v09_messages
 
 
 def test_message_sequence_is_v09_shape():
-    msgs = hello_material_messages()
+    msgs = hello_v09_messages()
     # every message carries the v0.9 version marker (GE needs it to pick the renderer)
     assert all(m.get("version") == "v0.9" for m in msgs)
     assert "createSurface" in msgs[0]
@@ -29,33 +29,36 @@ def test_message_sequence_is_v09_shape():
     # v0.9 has no beginRendering
     assert not any("beginRendering" in m for m in msgs)
     cs = msgs[0]["createSurface"]
-    assert cs["catalogId"] == CATALOG_MATERIAL
+    assert cs["catalogId"] == CATALOG_BASIC and cs["catalogId"].startswith("https://")
     assert cs["surfaceId"] == msgs[1]["updateComponents"]["surfaceId"]
 
 
-def test_uses_material_components_and_styling():
-    comps = hello_material_messages()[1]["updateComponents"]["components"]
-    kinds = {c["component"] for c in comps}
-    assert {"MaterialColumn", "MaterialCard", "MaterialText", "MaterialButton"} <= kinds
-    buttons = [c for c in comps if c["component"] == "MaterialButton"]
+def test_basic_component_shapes():
+    comps = hello_v09_messages()[1]["updateComponents"]["components"]
+    by_id = {c["id"]: c for c in comps}
+    # Card uses `child` (single); Column/Row use `children` (array)
+    assert isinstance(by_id["card"]["child"], str)
+    assert isinstance(by_id["root"]["children"], list)
+    # Button uses `child` (a Text id — the label) + variant, NOT text/label
+    buttons = [c for c in comps if c["component"] == "Button"]
     assert len(buttons) == 3
-    # each button carries the styling that v0.8 could not: appearance + color
     for b in buttons:
-        assert "label" in b and "appearance" in b and "color" in b
+        assert "child" in b and "text" not in b and "label" not in b
+        assert b["variant"] in {"default", "primary", "borderless"}
         assert b["action"]["event"]["name"] == "hello_clicked"
-    assert {b["color"] for b in buttons} == {"primary", "accent", "warn"}
+        assert by_id[b["child"]]["component"] == "Text"  # label resolves to a Text
 
 
 def test_flat_discriminator_shape():
     # v0.9 = flat {"id","component":"X",...}, NOT nested {"component":{"X":{}}}
-    comps = hello_material_messages()[1]["updateComponents"]["components"]
+    comps = hello_v09_messages()[1]["updateComponents"]["components"]
     for c in comps:
-        assert isinstance(c["component"], str)  # discriminator string, not a dict
+        assert isinstance(c["component"], str)
 
 
 def test_roundtrips_through_a2a_converter():
     # same transport as v0.8: each message wraps into an A2A DataPart w/ the a2ui mime
-    for m in hello_material_messages():
+    for m in hello_v09_messages():
         a2a = convert_genai_part_to_a2a_part(to_genai_part(m))
         assert a2a is not None
         assert a2a.root.metadata.get("mimeType") == "application/json+a2ui"
@@ -68,7 +71,7 @@ def test_callback_appends_surface_and_sets_text():
     resp.content = genai_types.Content(parts=[part], role="model")
     _append_surface(MagicMock(), resp)
     # text replaced + two DataParts appended (createSurface + updateComponents)
-    assert "Material" in resp.content.parts[0].text
+    assert "v0.9" in resp.content.parts[0].text
     data_parts = [p for p in resp.content.parts if p.inline_data]
     assert len(data_parts) == 2
 

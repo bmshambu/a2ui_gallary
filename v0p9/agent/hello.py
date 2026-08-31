@@ -1,82 +1,72 @@
-"""'Hello, Material' — the smallest A2UI v0.9 probe for Gemini Enterprise.
+"""'Hello, v0.9' — the smallest A2UI v0.9 surface for GE, on the BASIC catalog.
 
-Goal of this probe (deploy it and look at GE chat):
-  1. Does GE accept our v0.9 message format over the SAME A2A transport we used for
-     v0.8 (the <a2a_datapart_json> wrapper, mimeType application/json+a2ui)?
-  2. Does GE render the v0.9 **Material** catalog?
-  3. Does Material styling actually show — button color/appearance and card elevation
-     (the thing v0.8 could NOT do)?
+Journey so far (full log in ../guidelines.md §7):
+  - ✅ Transport: the v0.8 <a2a_datapart_json> wrapper (mimeType application/json+a2ui)
+    carries v0.9 messages fine — DataParts show in the Agent Engine Playground.
+  - ✅ Version marker: adding "version": "v0.9" made GE recognize v0.9 and try to render
+    (before it, GE defaulted to v0.8, ignored createSurface, and showed only text).
+  - ❌ catalogId "material" → GE error "Catalog not found: material". The Material catalog
+    is GE-proprietary; its catalogId URL is not public. So this probe uses the PUBLIC
+    **basic** catalog, whose catalogId GE accepts. Basic gives Button `variant`
+    (default/primary/borderless) — real v0.9 rendering; full colour/elevation still needs
+    the (unknown) Material catalogId.
 
-If the three colored/elevated buttons render → all three are answered YES and we can
-port the concierge. If nothing renders or it errors, the assumptions below are what to
-adjust (each is annotated).
-
-v0.9 format facts confirmed from the a2ui spec + GE docs:
-  - Messages: createSurface → updateComponents (NO beginRendering in v0.9).
-  - Flat discriminator: {"id": "x", "component": "MaterialButton", ...props}.
-  - MaterialButton uses `label` (not `text`/`child`), plus `appearance` + `color`.
-  - MaterialCard / MaterialColumn / MaterialRow use `children` (array of ids).
-  - GE selects the catalog with catalogId "material" (per GE docs example).
+Exact basic v0.9 component shapes (from the google/A2UI basic catalog schema):
+  Column / Row : children[] + justify + align
+  Card         : child (a SINGLE component id)
+  Text         : text + variant (h1..h5 / caption / body)
+  Button       : child (a Text id — the label!) + variant (default/primary/borderless) + action
 """
 import uuid
 
-# ASSUMPTION #1 (verify): GE takes the short id "material" for the Material catalog.
-# If GE wants a full URL instead, this is the first thing to change.
-CATALOG_MATERIAL = "material"
+# Confirmed catalogId GE accepts (equals the catalog's $id). VERIFY it renders.
+CATALOG_BASIC = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"
 
 
-def hello_material_messages() -> list[dict]:
-    surface_id = f"hello-{uuid.uuid4().hex[:12]}"
+def hello_v09_messages() -> list[dict]:
+    sid = f"hello-{uuid.uuid4().hex[:12]}"
     return [
-        # createSurface — declare the surface + which catalog to render with.
-        # NOTE the "version": "v0.9" marker: GE's A2UI renderer defaults to v0.8
-        # semantics (it looks for surfaceUpdate/beginRendering). Without this
-        # marker GE doesn't recognize createSurface and renders NOTHING (attempt #1
-        # showed text but no card). This sibling field routes it to the v0.9 renderer.
         {
             "version": "v0.9",
             "createSurface": {
-                "surfaceId": surface_id,
-                "catalogId": CATALOG_MATERIAL,
+                "surfaceId": sid,
+                "catalogId": CATALOG_BASIC,
                 "sendDataModel": False,
-            }
+            },
         },
-        # updateComponents — the component tree (root is the component with id "root").
         {
             "version": "v0.9",
             "updateComponents": {
-                "surfaceId": surface_id,
+                "surfaceId": sid,
                 "components": [
-                    {"id": "root", "component": "MaterialColumn",
-                     "children": ["card"], "align": "stretch"},
-
-                    {"id": "card", "component": "MaterialCard",
-                     "appearance": "raised", "children": ["inner"]},
-
-                    {"id": "inner", "component": "MaterialColumn",
+                    {"id": "root", "component": "Column", "children": ["card"], "align": "stretch"},
+                    {"id": "card", "component": "Card", "child": "inner"},
+                    {"id": "inner", "component": "Column",
                      "children": ["title", "subtitle", "btnrow"], "align": "stretch"},
 
-                    {"id": "title", "component": "MaterialText",
-                     "text": "Hello, Material 👋", "variant": "h4"},
-                    {"id": "subtitle", "component": "MaterialText",
-                     "text": "If these buttons are colored and this card is elevated, "
-                             "A2UI v0.9 Material renders in GE — styling that v0.8 could not do.",
+                    {"id": "title", "component": "Text",
+                     "text": "Hello, A2UI v0.9 👋", "variant": "h4"},
+                    {"id": "subtitle", "component": "Text",
+                     "text": "If you can see this card and the three buttons below, "
+                             "A2UI v0.9 renders natively in Gemini Enterprise.",
                      "variant": "body"},
 
-                    {"id": "btnrow", "component": "MaterialRow",
-                     "children": ["b_filled", "b_tonal", "b_outlined"], "justify": "start"},
+                    {"id": "btnrow", "component": "Row",
+                     "children": ["b1", "b2", "b3"], "justify": "start"},
 
-                    # three appearance × color combos — the actual styling test
-                    {"id": "b_filled", "component": "MaterialButton",
-                     "label": "Filled · primary", "appearance": "filled", "color": "primary",
-                     "action": {"event": {"name": "hello_clicked", "context": {"which": "filled"}}}},
-                    {"id": "b_tonal", "component": "MaterialButton",
-                     "label": "Tonal · accent", "appearance": "tonal", "color": "accent",
-                     "action": {"event": {"name": "hello_clicked", "context": {"which": "tonal"}}}},
-                    {"id": "b_outlined", "component": "MaterialButton",
-                     "label": "Outlined · warn", "appearance": "outlined", "color": "warn",
-                     "action": {"event": {"name": "hello_clicked", "context": {"which": "outlined"}}}},
+                    # Button `child` points at a Text (the label). variant is the styling.
+                    {"id": "b1", "component": "Button", "child": "b1l", "variant": "primary",
+                     "action": {"event": {"name": "hello_clicked", "context": {"which": "primary"}}}},
+                    {"id": "b1l", "component": "Text", "text": "Primary"},
+
+                    {"id": "b2", "component": "Button", "child": "b2l", "variant": "borderless",
+                     "action": {"event": {"name": "hello_clicked", "context": {"which": "borderless"}}}},
+                    {"id": "b2l", "component": "Text", "text": "Borderless"},
+
+                    {"id": "b3", "component": "Button", "child": "b3l", "variant": "default",
+                     "action": {"event": {"name": "hello_clicked", "context": {"which": "default"}}}},
+                    {"id": "b3l", "component": "Text", "text": "Default"},
                 ],
-            }
+            },
         },
     ]

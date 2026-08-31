@@ -13,7 +13,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 
 from .a2ui import to_genai_part
-from .hello import hello_material_messages
+from .hello import hello_v09_messages
 
 # v0.9 message keys (+ v0.8 keys, harmless) — used to strip A2UI JSON from history
 # so the model can't parrot it into the chat bubble.
@@ -70,11 +70,11 @@ def _append_surface(callback_context: CallbackContext, llm_response: LlmResponse
             p.text = _ECHO_RE.sub("", p.text).rstrip()
     for p in content.parts:
         if p.text is not None:
-            p.text = ("Here's an A2UI **v0.9 Material** card — the buttons below should be "
-                      "colored and the card elevated.")
+            p.text = ("Here's an A2UI **v0.9** card (basic catalog). If the card and the "
+                      "three buttons render, v0.9 works in GE.")
             break
 
-    for message in hello_material_messages():
+    for message in hello_v09_messages():
         content.parts.append(to_genai_part(message))
     return llm_response
 
