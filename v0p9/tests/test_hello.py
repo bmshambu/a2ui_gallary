@@ -22,8 +22,10 @@ from agent.hello import CATALOG_MATERIAL, hello_material_messages
 
 def test_message_sequence_is_v09_shape():
     msgs = hello_material_messages()
-    assert list(msgs[0]) == ["createSurface"]
-    assert list(msgs[1]) == ["updateComponents"]
+    # every message carries the v0.9 version marker (GE needs it to pick the renderer)
+    assert all(m.get("version") == "v0.9" for m in msgs)
+    assert "createSurface" in msgs[0]
+    assert "updateComponents" in msgs[1]
     # v0.9 has no beginRendering
     assert not any("beginRendering" in m for m in msgs)
     cs = msgs[0]["createSurface"]

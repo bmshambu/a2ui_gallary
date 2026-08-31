@@ -29,7 +29,12 @@ def hello_material_messages() -> list[dict]:
     surface_id = f"hello-{uuid.uuid4().hex[:12]}"
     return [
         # createSurface — declare the surface + which catalog to render with.
+        # NOTE the "version": "v0.9" marker: GE's A2UI renderer defaults to v0.8
+        # semantics (it looks for surfaceUpdate/beginRendering). Without this
+        # marker GE doesn't recognize createSurface and renders NOTHING (attempt #1
+        # showed text but no card). This sibling field routes it to the v0.9 renderer.
         {
+            "version": "v0.9",
             "createSurface": {
                 "surfaceId": surface_id,
                 "catalogId": CATALOG_MATERIAL,
@@ -38,6 +43,7 @@ def hello_material_messages() -> list[dict]:
         },
         # updateComponents — the component tree (root is the component with id "root").
         {
+            "version": "v0.9",
             "updateComponents": {
                 "surfaceId": surface_id,
                 "components": [

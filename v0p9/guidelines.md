@@ -153,3 +153,33 @@ v0p9/
 - **Before porting the flow, verify the load-bearing unknowns in §4** (version/catalog declaration,
   transport/SDK, data-binding write-back). Carry over the v0.8 hardening in §3 that still applies.
 - Then rebuild the concierge in `v0p9/` to showcase the components we *couldn't* do in v0.8.
+
+---
+
+## 7. Build log — verified in GE (append every new result here) 📓
+
+Living record of what we actually confirmed on GE, from the `v0p9/` Hello-Material probe onward.
+
+### Transport & deploy
+- ✅ **Same transport as v0.8 works for v0.9.** The `<a2a_datapart_json>` wrapper +
+  `mimeType: application/json+a2ui` carries v0.9 messages fine — DataParts are emitted and
+  visible in the Agent Engine **Playground**. (`agent/a2ui.py` reused verbatim.)
+- ✅ **Playground never renders A2UI** — it shows the raw base64 `inlineData`. **Only GE chat
+  renders.** Don't judge rendering from the Playground (same rule as v0.8).
+- ⚠️ **`agent_engines.update()` can 500 (INTERNAL / code 13)** — often transient; retry, or
+  deploy under a distinct display name so it takes the *create* path. Not an A2UI issue.
+
+### v0.9 rendering
+- ❌ **Attempt #1 — no version marker → GE rendered NOTHING.** DataPart `data` was
+  `{"createSurface": {...}}` with no version field. GE's renderer defaults to **v0.8 semantics**
+  (it looks for `surfaceUpdate`/`beginRendering`), doesn't recognize `createSurface`, and renders
+  only the text — no card, no buttons.
+- 🔄 **Attempt #2 — add `"version": "v0.9"`** as a sibling of `createSurface`/`updateComponents`
+  in each message's `data`. Hypothesis: this routes GE to the v0.9 renderer. **Testing — update
+  this line with the result.** Payload now: `{"version":"v0.9","createSurface":{…}}`.
+
+### Still to confirm (once a card renders)
+- Does `catalogId: "material"` select the Material catalog, or is a full URL needed?
+- Do `MaterialButton` `appearance`/`color` actually paint (the styling win)?
+- Do `MaterialCard.children` / `MaterialColumn.children` (array) render the tree correctly?
+- Are `createSurface` + `updateComponents` enough (no render trigger), or is ordering/batching needed?
