@@ -108,6 +108,7 @@ DEFAULT_BOOKING = {
 }
 
 STEP_BUILDERS = {
+    "theme": concierge.theme_step,
     "preferences": concierge.preferences_step,
     "results": concierge.results_step,
     "detail": concierge.detail_step,
@@ -119,7 +120,8 @@ STEP_BUILDERS = {
 }
 
 STEP_TEXT = {
-    "preferences": "👋 Welcome to the Concierge (v0.9). Set your preferences and tap **Find tables**.",
+    "theme": "👋 Welcome to the Concierge (v0.9). First, pick a colour theme and tap **Apply theme**.",
+    "preferences": "🎨 Theme applied. Now set your preferences and tap **Find tables**.",
     "results": "Here's what matched your search.",
     "detail": "Explore the tabs, then reserve when you're ready.",
     "reservation": "Almost done — enter your details to book.",
@@ -146,7 +148,7 @@ def _as_bool(v):
 
 def advance(state, action) -> tuple[str, dict]:
     booking = dict(state.get("booking") or DEFAULT_BOOKING)
-    step = state.get("step") or "preferences"
+    step = state.get("step") or "theme"
     if not action:
         return step, booking
     name = action.get("name")
@@ -182,13 +184,16 @@ def advance(state, action) -> tuple[str, dict]:
         else:
             step = "confirmation"
     elif name == "new_search":
-        booking = dict(DEFAULT_BOOKING)
+        # fresh search but keep the theme the user already chose (no re-picking)
+        keep = {"theme": booking.get("theme"), "theme_sel": booking.get("theme_sel", [])}
+        booking = {**DEFAULT_BOOKING, **keep}
         step = "preferences"
     elif name == "set_theme":
         sel = ctx.get("theme")
         key = sel[0] if isinstance(sel, list) and sel else (sel if isinstance(sel, str) else None)
         booking["theme"] = data.THEME_COLORS.get(key)
         booking["theme_sel"] = sel if isinstance(sel, list) else ([sel] if sel else [])
+        # theme is the gate → once applied, move on to Find a table
         step = "preferences"
     elif name == "show_component":
         booking["demo_component"] = str(ctx.get("component") or "")
@@ -196,7 +201,7 @@ def advance(state, action) -> tuple[str, dict]:
     elif name == "back_to_gallery":
         step = "gallery"
     elif name == "exit_gallery":
-        step = "preferences"
+        step = "preferences" if booking.get("theme") else "theme"
     return step, booking
 
 

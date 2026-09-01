@@ -276,16 +276,32 @@ Deployed all 5 steps; the whole booking journey works end-to-end:
   (Material catalog).
 - ❌ Native **Map** component — not in basic catalog (use a Markdown map *link*). Material may have one.
 
-### Enhancements built (pending GE verify)
-- 🎨 **Theme selector** in Preferences (`ChoicePicker` of colours + "Apply theme" → `set_theme`
-  action). Applies `createSurface.theme.primaryColor` to **every** surface (persisted in booking).
-  Like a light/dark switch. **Verify the primaryColor actually recolors buttons/borders in GE.**
-- 🗺️ **Map link** in Location tab — a Markdown link `[Open in Maps](…maps…)` in a Text.
-  **Verify Markdown links render + click through in GE.**
-- 🔎 **`filterable: true`** on cuisine/dietary ChoicePicker (search box).
-- 🔠 **Bigger tab text** — detail tab content moved `caption` → `body`.
-- 🧩 **Components gallery** ("show me the components used" typed trigger → menu → per-component
-  demo, each in isolation). Ported from the v0.8 A2UI_advanced gallery.
+### Enhancements — GE verdicts (deployed 2026-09-01)
+- 🎨 **Theme selector** — ✅ **CONFIRMED in GE**. `createSurface.theme.primaryColor` (a hex) really
+  repaints primary buttons, active chip fill, AND slider tracks — set it per surface and GE honors
+  it on the **basic** catalog. This is the one working global styling lever. Persist the hex in
+  state and stamp it on every surface. (Screenshot: Forest → green chip + green sliders.)
+- 🗺️ **Map link** — ✅ **CONFIRMED**. A Markdown link `[label](https://…)` in a `variant:body` Text
+  renders as a real clickable link in GE v0.9.
+- 🔠 **Bigger tab text** — ✅ **CONFIRMED**. Tab body content reads noticeably larger with
+  `variant:body` vs `caption`. Use `body` for anything you want at readable size inside Tabs.
+- 🔎 **`filterable: true`** — ❌ **DOES NOT WORK** on the basic-catalog `ChoicePicker`. GE renders the
+  same chip list with no search box; the flag is silently ignored. A real searchable/typeahead
+  picker needs the **Material** catalog (`MaterialSelect`). Don't rely on `filterable` on basic.
+- 🧩 **Components gallery** — built ("show me the components used" typed trigger → menu →
+  per-component demo). Ported from the v0.8 A2UI_advanced gallery.
+
+### Theme-first flow (theme as the mandatory first interaction)
+The user wanted theme selection to gate the whole flow — for **any** opening question, show the
+theme picker first; only after **Apply theme** does it proceed to "Find a table". Implemented as a
+dedicated **`theme_step`** (its own surface: title + `ChoicePicker` + "Apply theme" button):
+- Default step is now **`theme`** (not `preferences`); the first no-action turn renders it.
+- `set_theme` stores the hex and advances → `preferences` (the theme is the gate).
+- The theme_step surface is itself themed once a colour is set, so "Apply theme" previews the colour.
+- `new_search` keeps the chosen theme (no re-picking); `exit_gallery` returns to `theme` if no
+  theme yet, else `preferences`.
+- Keeping theme in its **own** step (vs inline in Preferences) is the clean way to make a selection
+  mandatory before the rest of a form in A2UI — one surface per gated stage.
 
 ### How to change the theme colour 🎨
 The colour lives in **`createSurface.theme.primaryColor`** — a hex string `"#RRGGBB"` that GE uses
@@ -311,8 +327,20 @@ Add/rename an entry in both (a label chip + its hex). The picker + "Apply theme"
 **C. To hard-code ONE brand colour** (no picker): drop the theme UI and just seed the booking, e.g.
 `DEFAULT_BOOKING["theme"] = "#e8590c"` in `agent.py` — it then applies to every surface automatically.
 
-> ⚠️ Whether GE actually repaints with `primaryColor` on the **basic** catalog is pending a deploy
-> check (see "Enhancements built"). If GE ignores it, per-component colour needs the Material catalog.
+> ✅ Confirmed in GE (2026-09-01): `primaryColor` repaints primary buttons, active chips, and slider
+> tracks on the **basic** catalog. It's global-only — per-component colour still needs Material.
+
+**Card / background colour — schema check (2026-09-01).** The basic-catalog **`Card`** is a *closed*
+schema (`unevaluatedProperties:false`); its only props are `child`, `weight`, `id`, `accessibility`.
+There is **no** per-component `backgroundColor`/`color`/`padding`/`fontSize` anywhere in basic — any
+such key is rejected. Per-card/surface colour is a **Material-catalog** feature.
+
+**🚪 Background probe (wired, pending GE verify).** The `theme` object is `additionalProperties:true`,
+so extra theme keys aren't rejected. `_msgs()` now also emits, alongside `primaryColor`:
+`backgroundColor` (soft tint of the theme), `surfaceColor` (near-white), `secondaryColor`. These are
+**undocumented** — GE may ignore them. **Verify on next deploy:** does the page/card ground actually
+change colour with the theme? If yes → new global styling lever (log it ✅). If no → basic caps at
+`primaryColor`, and background is Material-only (log it ❌ and we can drop the extra keys).
 
 ### Still open
 - **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components

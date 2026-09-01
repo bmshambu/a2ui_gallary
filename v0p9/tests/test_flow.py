@@ -86,7 +86,12 @@ class TestAdvance:
         assert step == "preferences"
 
     def test_default_step(self):
-        assert advance({}, None)[0] == "preferences"
+        assert advance({}, None)[0] == "theme"
+
+    def test_set_theme_advances_to_preferences(self):
+        step, _ = advance({"step": "theme", "booking": dict(DEFAULT_BOOKING)},
+                          {"name": "set_theme", "context": {"theme": ["forest"]}})
+        assert step == "preferences"
 
 
 # ── v0.9 incoming event parsing ───────────────────────────────────────────────
@@ -136,13 +141,23 @@ def _a2ui(resp):
 
 
 class TestCallback:
-    def test_first_turn_renders_preferences(self):
+    def test_first_turn_renders_theme(self):
         state = {}
         resp = _resp()
         _append_step(_ctx(state, None), resp)
-        assert state["step"] == "preferences"
+        assert state["step"] == "theme"
         assert any("createSurface" in m for m in _a2ui(resp))
-        assert "Concierge" in resp.content.parts[0].text
+        assert "theme" in resp.content.parts[0].text.lower()
+
+    def test_apply_theme_advances_to_preferences(self):
+        state = {"step": "theme", "booking": dict(DEFAULT_BOOKING)}
+        resp = _resp()
+        _append_step(_ctx(state, {"name": "set_theme", "context": {"theme": ["forest"]}}), resp)
+        assert state["step"] == "preferences"
+        assert state["booking"]["theme"] == "#2f9e44"
+        # preferences surface is themed
+        create = next(m["createSurface"] for m in _a2ui(resp) if "createSurface" in m)
+        assert create["theme"]["primaryColor"] == "#2f9e44"
 
     def test_find_tables_advances_to_results(self):
         state = {"step": "preferences", "booking": dict(DEFAULT_BOOKING)}
@@ -222,9 +237,15 @@ class TestThemeAndExtras:
     def _comps(self, msgs):
         return msgs[1]["updateComponents"]["components"]
 
-    def test_preferences_has_theme_picker_and_filterable(self):
-        comps = {c["id"]: c for c in self._comps(concierge.preferences_step(DEFAULT_BOOKING))}
+    def test_theme_step_has_picker_and_apply(self):
+        comps = {c["id"]: c for c in self._comps(concierge.theme_step(DEFAULT_BOOKING))}
         assert comps["theme"]["component"] == "ChoicePicker"
+        assert comps["theme"]["variant"] == "mutuallyExclusive"
+        assert comps["apply"]["action"]["event"]["name"] == "set_theme"
+
+    def test_preferences_has_no_theme_picker(self):
+        comps = {c["id"]: c for c in self._comps(concierge.preferences_step(DEFAULT_BOOKING))}
+        assert "theme" not in comps  # theme moved to its own first step
         assert comps["cuisine"].get("filterable") is True
 
     def test_theme_applied_to_createSurface(self):

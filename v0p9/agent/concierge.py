@@ -25,11 +25,28 @@ def _surface(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _mix_white(hex_color: str, amount: float) -> str:
+    """Lighten a #RRGGBB hex toward white by `amount` (0=unchanged, 1=white)."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (round(c + (255 - c) * amount) for c in (r, g, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def _msgs(surface_id: str, components: list[dict], data_model: dict | None,
           theme: str | None = None) -> list[dict]:
     create = {"surfaceId": surface_id, "catalogId": CATALOG_BASIC, "sendDataModel": False}
     if theme:  # a hex like "#e8590c" — brands primary buttons / active borders
-        create["theme"] = {"primaryColor": theme}
+        create["theme"] = {
+            "primaryColor": theme,
+            # PROBE: undocumented theme keys. The catalog's theme schema is
+            # additionalProperties:true, so these won't be rejected. Testing whether GE
+            # honors a page/card background (basic Card has no per-component bg). If GE
+            # ignores them there's no harm; if it paints, that's a new styling lever.
+            "backgroundColor": _mix_white(theme, 0.90),  # soft page tint
+            "surfaceColor": _mix_white(theme, 0.96),     # near-white card ground
+            "secondaryColor": theme,
+        }
     msgs = [
         {"version": "v0.9", "createSurface": create},
         {"version": "v0.9", "updateComponents": {"surfaceId": surface_id, "components": components}},
@@ -124,28 +141,43 @@ def _divider(comp_id: str, axis: str = "horizontal") -> dict:
     return {"id": comp_id, "component": "Divider", "axis": axis}
 
 
+# ── Step 0: Theme — the first interaction; gates the rest of the flow ─────────
+
+def theme_step(booking: dict) -> list[dict]:
+    """First screen for any question: pick a colour theme, then Apply → Preferences.
+
+    Kept separate from Preferences so theme selection is the mandatory first step
+    (confirmed in GE: theme.primaryColor repaints buttons/borders/sliders).
+    """
+    sid = _surface("theme")
+    children = ["title", "sub", "theme", "apply"]
+    components = [
+        _card("root", "col"),
+        _col("col", children),
+        _text("title", "Choose your theme", variant="h4"),
+        _text("sub", "Pick a colour to personalise your concierge — then we'll find you a table.",
+              variant="body"),
+        _choice("theme", "/theme_sel", data.THEMES, label="Colour theme",
+                variant="mutuallyExclusive", display="chips"),
+    ]
+    components += _button("apply", "Apply theme", "set_theme",
+                          {"theme": {"path": "/theme_sel"}}, variant="primary")
+    data_model = {"theme_sel": booking.get("theme_sel", [])}
+    return _msgs(sid, components, data_model, theme=booking.get("theme"))
+
+
 # ── Step 1: Preferences ──────────────────────────────────────────────────────
 
 def preferences_step(booking: dict) -> list[dict]:
     sid = _surface("prefs")
     children = [
-        "title", "theme_lbl", "theme", "apply_theme", "theme_div",
-        "cuisine", "dietary", "budget", "rating",
+        "title", "cuisine", "dietary", "budget", "rating",
         "f_outdoor", "f_open", "when", "find",
     ]
     components = [
         _card("root", "col"),
         _col("col", children),
         _text("title", "Find a table", variant="h4"),
-        # Theme picker — like a light/dark switch; Apply re-renders with the color
-        _text("theme_lbl", "Theme", variant="caption"),
-        _choice("theme", "/theme_sel", data.THEMES, label="Colour theme",
-                variant="mutuallyExclusive", display="chips"),
-    ]
-    components += _button("apply_theme", "Apply theme", "set_theme",
-                          {"theme": {"path": "/theme_sel"}}, variant="borderless")
-    components += [
-        _divider("theme_div"),
         _choice("cuisine", "/cuisine", data.CUISINES, label="Cuisine", filterable=True),
         _choice("dietary", "/dietary", data.DIETARY, label="Dietary needs", filterable=True),
         _slider("budget", "/budget", 20, 100, label="Max budget per person ($)"),
@@ -164,7 +196,6 @@ def preferences_step(booking: dict) -> list[dict]:
         "when": {"path": "/when"},
     })
     data_model = {
-        "theme_sel": booking.get("theme_sel", []),
         "cuisine": booking.get("cuisine", []),
         "dietary": booking.get("dietary", []),
         "budget": booking.get("budget", 50),
@@ -375,4 +406,7 @@ def action_echo(action: dict, booking: dict) -> str | None:
     if name == "show_component":
         comp = booking.get("demo_component") or ""
         return f"Component · {comp}" if comp else "Component"
-    return _ACTION_LABELS.get(name)  # set_theme → None (no echo)
+    if name == "set_theme":
+        sel = booking.get("theme_sel") or []
+        return f"Theme · {sel[0].title()}" if sel else None
+    return _ACTION_LABELS.get(name)
