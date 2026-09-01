@@ -1,56 +1,58 @@
 # A2UI v0.9 — `v0p9/`
 
-New work on **A2UI v0.9** (GE added v0.9 support 2026‑05‑13). Read
-[`guidelines.md`](guidelines.md) first — it maps v0.9's wins to our v0.8 struggles and
-lists what still needs verifying. The v0.8 `../A2UI_advanced/` build stays as the baseline.
+The Restaurant Concierge **revamped on A2UI v0.9** (GE added v0.9 support 2026‑05‑13).
+Read [`guidelines.md`](guidelines.md) — it maps v0.9's wins to our v0.8 struggles and is the
+**living log of everything we confirmed in GE** (§7). The v0.8 build in `../A2UI_advanced/`
+stays as the baseline.
 
-## Step 1 — the "Hello Material" probe (this)
+## Status: full flow working in GE ✅
 
-The smallest possible v0.9 surface, built to answer three questions in one deploy:
+Same 5-step booking journey as v0.8, rebuilt on v0.9 with capabilities v0.8 never had:
 
-1. Does GE accept **v0.9 messages** over the **same A2A transport** we used for v0.8?
-2. Does GE render the **Material catalog**?
-3. Does **Material styling** actually show (button `color`/`appearance`, card elevation) —
-   the thing v0.8 could not do?
+| Step | v0.9 build |
+|---|---|
+| **Preferences** | `ChoicePicker` **chips** (cuisine/dietary), `Slider` ×2, `CheckBox`, `DateTimeInput`, primary button |
+| **Results** | a **photo card** per match (`Image` — v0.9 renders external images!) + Select |
+| **Detail** | `Tabs`: Overview (photo) · Menu · Reviews (+ `Modal`) · Location |
+| **Reservation** | `TextField` ×2 · `Slider` · `DateTimeInput` · server-side validation |
+| **Confirmation** | styled receipt (`Divider` + summary) |
 
-It renders one elevated `MaterialCard` with a title and **three buttons**: filled·primary,
-tonal·accent, outlined·warn.
+### What v0.9 gave us over v0.8
+- **Images render** (restaurant photos) — the v0.8 hard-block is gone
+- **`variant` styling** (blue primary / borderless buttons), **chips** selection
+- **Flat components**, `{path}` binding, **pre-resolved event context** (no raw-JSON parsing of form values)
+- Cleaner messages: `createSurface` / `updateComponents` / `updateDataModel`
 
+## How it works
+- `"version": "v0.9"` on **every** message (required — without it GE falls back to v0.8 and renders nothing).
+- `catalogId` is the **basic catalog URL** `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`.
+- Clicks arrive as `{"action": {name, context}}` with **bindings pre-resolved**; the state machine
+  (`agent.advance`) updates the booking in ADK session state and renders the next step.
+- Transport = the version-agnostic `<a2a_datapart_json>` wrapper (`agent/a2ui.py`, reused from v0.8).
+
+## Layout
 ```
-v0p9/agent/hello.py   → the v0.9 Material message sequence (createSurface + updateComponents)
-v0p9/agent/agent.py   → LlmAgent + callbacks (transport + history scrub reused from v0.8)
-v0p9/tests/test_hello.py → 6 offline checks (shape + A2A round-trip)
+v0p9/
+  guidelines.md        ← v0.9 findings + build log (share this)
+  agent/
+    a2ui.py            transport (reused)
+    data.py            restaurant dataset + photos + search
+    concierge.py       the 5 step builders (v0.9 basic catalog)
+    agent.py           LlmAgent + state machine + v0.9 event parsing
+    hello.py           the original "hello v0.9" probe (kept for reference)
+  tests/test_flow.py   21 offline tests
 ```
 
-### Run tests
+## Run tests / deploy
 ```bash
 cd v0p9
 ../.venv/Scripts/python -m pytest tests/ -v
-```
-
-### Deploy
-```bash
-cp env.dev.example .env.dev   # fill in project/bucket; display name is already distinct
+cp env.dev.example .env.dev   # fill project/bucket; distinct display name already set
 python deploy_to_agent_engine.py
 ```
-Register the printed resource name in the GE Admin console (first deploy only), then open
-the agent in GE chat and say "hi".
 
-### How to read the result
-
-| What you see in GE | Verdict |
-|---|---|
-| Elevated card + **three colored buttons** | ✅ v0.9 Material + styling work → port the concierge |
-| Card + buttons render but **no color/elevation** | v0.9 renders, but styling props ignored — check `appearance`/`color` names or catalog |
-| Raw JSON / "Unsupported attachment" | Transport or format rejected — check the `catalogId` and the v0.9 message shape |
-| Nothing / error | Wrong `catalogId` (try a full URL) or GE needs a different handshake |
-
-### Assumptions baked in (the things to adjust if it fails)
-- `catalogId: "material"` (short id, per GE docs example) — may need a full URL.
-- Transport = the v0.8 `<a2a_datapart_json>` wrapper + `mimeType application/json+a2ui`
-  (version-agnostic — carries any JSON). The probe reuses it verbatim.
-- Material property names: `MaterialButton.label`, `appearance`, `color`;
-  `MaterialCard.children` + `appearance`; `MaterialColumn/Row.children`.
-
-Once this renders, Step 2 is porting the Restaurant Concierge onto v0.9 Material
-(see `guidelines.md` §5).
+## Next (optional): Material catalog
+The **basic** catalog covers the whole flow. The **Material** catalog would add richer styling —
+`color` (primary/accent/warn), elevation, `MaterialTable`, `MaterialExpansionPanel` (accordion),
+`MaterialChips` — but its `catalogId` is GE-proprietary and not public. Get that URL from your GE
+admin/console to swap it in; not a blocker.

@@ -245,6 +245,75 @@ Deployed the v0.9 concierge Preferences surface — everything rendered and work
 - ✅ **Multi-step state machine** (ADK session state) + incoming `{"action":{name,context}}` parsing works.
 - ⚠️ "User action triggered." bubble still appears on click (unchanged from v0.8 — mitigation carries over).
 
+### Concierge FULL FLOW — CONFIRMED in GE ✅ 🎉
+Deployed all 5 steps; the whole booking journey works end-to-end:
+- ✅ **Results**: multiple **external images render at once** (photo card per match) — v0.8 couldn't show any image.
+- ✅ **Detail `Tabs`** (4 tabs, new `tabs: [{title, child}]` shape) render and switch; a **large `Image`** renders inside a tab.
+- ✅ **`Modal`** (new `trigger`/`content` shape) opens on click, showing overlay content.
+- ✅ **Markdown bold renders in `Text` `variant: body`** (Menu dish names bold). ⚠️ It did **NOT**
+  render in a `variant: caption` Text (the modal source list showed literal `**…**`) → **use
+  `variant: body` (not caption) when a Text contains markdown.** Fixed the review-sources list.
+- ✅ Full state machine (find_tables → results → detail → reservation → confirmation), click echo,
+  variant button styling, `updateDataModel` binding all working.
+
+### Styling / control available in v0.9 basic catalog (researched)
+**CAN control:**
+- ✅ **Surface `theme`** (on `createSurface`): `primaryColor` (hex `#RRGGBB` — brands primary buttons /
+  active borders), `iconUrl` (agent icon by the surface), `agentDisplayName`. The one real global
+  styling lever.
+- ✅ **Text `variant`**: `h1`–`h5` (heading sizes), `body`, `caption` (small). This is font sizing.
+- ✅ **`weight`** (common) — proportional size within a Row/Column; layout via Row/Column `align`/`justify`.
+- ✅ **Button `variant`** (default/primary/borderless), **Image `variant`** (icon/avatar/…/largeFeature).
+- ✅ **`Text` renders Markdown** (bold, **links**) — but NOT HTML/images. So a **map link** =
+  `[Open in Maps](https://www.google.com/maps/search/?api=1&query=<address>)` in a Text.
+- ✅ **ChoicePicker**: `displayStyle` `chips` (compact) or `checkbox` (list) + `filterable: true`
+  (adds a search box for long option lists).
+
+**CANNOT control (basic catalog):**
+- ❌ Per-component **padding / margin / arbitrary font-size / color** (only theme.primaryColor globally
+  + component variants). Card gives padding automatically.
+- ❌ A true collapsing **dropdown** for ChoicePicker (only chips/checkbox) — need `MaterialSelect`
+  (Material catalog).
+- ❌ Native **Map** component — not in basic catalog (use a Markdown map *link*). Material may have one.
+
+### Enhancements built (pending GE verify)
+- 🎨 **Theme selector** in Preferences (`ChoicePicker` of colours + "Apply theme" → `set_theme`
+  action). Applies `createSurface.theme.primaryColor` to **every** surface (persisted in booking).
+  Like a light/dark switch. **Verify the primaryColor actually recolors buttons/borders in GE.**
+- 🗺️ **Map link** in Location tab — a Markdown link `[Open in Maps](…maps…)` in a Text.
+  **Verify Markdown links render + click through in GE.**
+- 🔎 **`filterable: true`** on cuisine/dietary ChoicePicker (search box).
+- 🔠 **Bigger tab text** — detail tab content moved `caption` → `body`.
+- 🧩 **Components gallery** ("show me the components used" typed trigger → menu → per-component
+  demo, each in isolation). Ported from the v0.8 A2UI_advanced gallery.
+
+### How to change the theme colour 🎨
+The colour lives in **`createSurface.theme.primaryColor`** — a hex string `"#RRGGBB"` that GE uses
+for primary buttons and active borders (the `theme` object also takes `iconUrl` and
+`agentDisplayName`). It is set at surface level, so it must go on **every** surface's `createSurface`.
+
+**A. Change what colours the user can pick** (the theme selector) — edit two lists in
+`v0p9/agent/data.py`:
+```python
+THEMES       = [{"label": "Sunset", "value": "sunset"}, …]   # picker chips (label shown, value = key)
+THEME_COLORS = {"sunset": "#e8590c", …}                       # key → hex the renderer uses
+```
+Add/rename an entry in both (a label chip + its hex). The picker + "Apply theme" button do the rest.
+
+**B. How it flows through the code:**
+1. Preferences shows a `ChoicePicker` bound to `/theme_sel`; the **"Apply theme"** button fires
+   `set_theme` with `{"theme": {"path": "/theme_sel"}}`.
+2. `agent.advance()` maps the chosen name → hex via `data.THEME_COLORS` and stores it in
+   `booking["theme"]` (persists across steps).
+3. Every step builder passes it down: `concierge._msgs(sid, comps, dm, theme=booking.get("theme"))`,
+   which adds `create["theme"] = {"primaryColor": booking["theme"]}` when set.
+
+**C. To hard-code ONE brand colour** (no picker): drop the theme UI and just seed the booking, e.g.
+`DEFAULT_BOOKING["theme"] = "#e8590c"` in `agent.py` — it then applies to every surface automatically.
+
+> ⚠️ Whether GE actually repaints with `primaryColor` on the **basic** catalog is pending a deploy
+> check (see "Enhancements built"). If GE ignores it, per-component colour needs the Material catalog.
+
 ### Still open
 - **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components
   (color/accent/warn, MaterialTable, MaterialExpansionPanel, MaterialChips, elevation). It's

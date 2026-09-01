@@ -10,12 +10,14 @@ import os
 import sys
 from unittest.mock import MagicMock
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.adk.a2a.converters.part_converter import convert_genai_part_to_a2a_part
 from google.genai import types as genai_types
 
-from agent import concierge, data
+from agent import concierge, data, gallery
 from agent.a2ui import to_genai_part
 from agent.agent import DEFAULT_BOOKING, _append_step, _extract_action, advance
 
@@ -214,3 +216,66 @@ class TestFullAdvance:
         step, b = advance({"step": "confirmation", "booking": dict(BOOKED)},
                           {"name": "new_search", "context": {}})
         assert step == "preferences" and b["restaurant_id"] is None
+
+
+class TestThemeAndExtras:
+    def _comps(self, msgs):
+        return msgs[1]["updateComponents"]["components"]
+
+    def test_preferences_has_theme_picker_and_filterable(self):
+        comps = {c["id"]: c for c in self._comps(concierge.preferences_step(DEFAULT_BOOKING))}
+        assert comps["theme"]["component"] == "ChoicePicker"
+        assert comps["cuisine"].get("filterable") is True
+
+    def test_theme_applied_to_createSurface(self):
+        msgs = concierge.preferences_step({**DEFAULT_BOOKING, "theme": "#e8590c"})
+        assert msgs[0]["createSurface"]["theme"]["primaryColor"] == "#e8590c"
+
+    def test_no_theme_key_when_unset(self):
+        msgs = concierge.preferences_step(DEFAULT_BOOKING)
+        assert "theme" not in msgs[0]["createSurface"]
+
+    def test_set_theme_maps_name_to_color(self):
+        step, b = advance({"step": "preferences", "booking": dict(DEFAULT_BOOKING)},
+                          {"name": "set_theme", "context": {"theme": ["sunset"]}})
+        assert step == "preferences" and b["theme"] == "#e8590c"
+
+    def test_detail_location_has_map_link(self):
+        msgs = concierge.detail_step({**DEFAULT_BOOKING, "restaurant_id": "bella-italia"})
+        assert "google.com/maps" in str(self._comps(msgs))
+
+
+class TestGalleryBranch:
+    def test_typed_message_opens_gallery(self):
+        state = {"step": "preferences", "booking": dict(DEFAULT_BOOKING)}
+        resp = _resp()
+        ctx = MagicMock()
+        ctx.state = state
+        ctx.user_content = genai_types.Content(
+            parts=[genai_types.Part(text="show me all the components used")], role="user")
+        _append_step(ctx, resp)
+        assert state["step"] == "gallery"
+
+    def test_show_component_renders_slider(self):
+        state = {"step": "gallery", "booking": dict(DEFAULT_BOOKING)}
+        resp = _resp()
+        _append_step(_ctx(state, {"name": "show_component", "context": {"component": "slider"}}), resp)
+        assert state["step"] == "component" and state["booking"]["demo_component"] == "slider"
+        kinds = {c["component"] for m in _a2ui(resp) if "updateComponents" in m
+                 for c in m["updateComponents"]["components"]}
+        assert "Slider" in kinds
+
+    def test_menu_lists_all_components(self):
+        msgs = gallery.gallery_menu_step(DEFAULT_BOOKING)
+        ids = [c["id"] for c in msgs[1]["updateComponents"]["components"]]
+        for k, _ in gallery.COMPONENTS:
+            assert f"c_{k}" in ids
+
+    @pytest.mark.parametrize("key,expected", [
+        ("slider", "Slider"), ("dropdown", "ChoicePicker"), ("checkbox", "CheckBox"),
+        ("datetime", "DateTimeInput"), ("textfield", "TextField"), ("tabs", "Tabs"),
+        ("modal", "Modal"), ("image", "Image")])
+    def test_each_demo_has_its_component(self, key, expected):
+        msgs = gallery.component_demo_step(key, DEFAULT_BOOKING)
+        kinds = {c["component"] for c in msgs[1]["updateComponents"]["components"]}
+        assert expected in kinds

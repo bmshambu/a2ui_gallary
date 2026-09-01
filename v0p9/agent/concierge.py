@@ -12,6 +12,7 @@ v0.9 vs the v0.8 build (see ../guidelines.md):
   - Slider: value + min + max.  CheckBox: value.  DateTimeInput: value+enableDate+enableTime.
 """
 import uuid
+from urllib.parse import quote
 
 from . import data
 
@@ -24,12 +25,14 @@ def _surface(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _msgs(surface_id: str, components: list[dict], data_model: dict | None) -> list[dict]:
+def _msgs(surface_id: str, components: list[dict], data_model: dict | None,
+          theme: str | None = None) -> list[dict]:
+    create = {"surfaceId": surface_id, "catalogId": CATALOG_BASIC, "sendDataModel": False}
+    if theme:  # a hex like "#e8590c" — brands primary buttons / active borders
+        create["theme"] = {"primaryColor": theme}
     msgs = [
-        {"version": "v0.9", "createSurface": {
-            "surfaceId": surface_id, "catalogId": CATALOG_BASIC, "sendDataModel": False}},
-        {"version": "v0.9", "updateComponents": {
-            "surfaceId": surface_id, "components": components}},
+        {"version": "v0.9", "createSurface": create},
+        {"version": "v0.9", "updateComponents": {"surfaceId": surface_id, "components": components}},
     ]
     if data_model is not None:
         msgs.append({"version": "v0.9", "updateDataModel": {
@@ -72,13 +75,17 @@ def _button(comp_id: str, label: str, action: str, context: dict | None = None,
 
 
 def _choice(comp_id: str, path: str, options: list[dict], *, label: str,
-            variant: str = "multipleSelection", display: str = "chips") -> dict:
-    return {
+            variant: str = "multipleSelection", display: str = "chips",
+            filterable: bool = False) -> dict:
+    d = {
         "id": comp_id, "component": "ChoicePicker", "label": label,
         "variant": variant, "displayStyle": display,
         "value": {"path": path},
         "options": [{"label": o["label"], "value": o["value"]} for o in options],
     }
+    if filterable:
+        d["filterable"] = True
+    return d
 
 
 def _slider(comp_id: str, path: str, mn: float, mx: float, *, label: str) -> dict:
@@ -122,15 +129,25 @@ def _divider(comp_id: str, axis: str = "horizontal") -> dict:
 def preferences_step(booking: dict) -> list[dict]:
     sid = _surface("prefs")
     children = [
-        "title", "cuisine", "dietary", "budget", "rating",
+        "title", "theme_lbl", "theme", "apply_theme", "theme_div",
+        "cuisine", "dietary", "budget", "rating",
         "f_outdoor", "f_open", "when", "find",
     ]
     components = [
         _card("root", "col"),
         _col("col", children),
         _text("title", "Find a table", variant="h4"),
-        _choice("cuisine", "/cuisine", data.CUISINES, label="Cuisine"),
-        _choice("dietary", "/dietary", data.DIETARY, label="Dietary needs"),
+        # Theme picker — like a light/dark switch; Apply re-renders with the color
+        _text("theme_lbl", "Theme", variant="caption"),
+        _choice("theme", "/theme_sel", data.THEMES, label="Colour theme",
+                variant="mutuallyExclusive", display="chips"),
+    ]
+    components += _button("apply_theme", "Apply theme", "set_theme",
+                          {"theme": {"path": "/theme_sel"}}, variant="borderless")
+    components += [
+        _divider("theme_div"),
+        _choice("cuisine", "/cuisine", data.CUISINES, label="Cuisine", filterable=True),
+        _choice("dietary", "/dietary", data.DIETARY, label="Dietary needs", filterable=True),
         _slider("budget", "/budget", 20, 100, label="Max budget per person ($)"),
         _slider("rating", "/min_rating", 0, 5, label="Minimum rating (★)"),
         _checkbox("f_outdoor", "/outdoor", "Outdoor seating"),
@@ -147,6 +164,7 @@ def preferences_step(booking: dict) -> list[dict]:
         "when": {"path": "/when"},
     })
     data_model = {
+        "theme_sel": booking.get("theme_sel", []),
         "cuisine": booking.get("cuisine", []),
         "dietary": booking.get("dietary", []),
         "budget": booking.get("budget", 50),
@@ -155,7 +173,7 @@ def preferences_step(booking: dict) -> list[dict]:
         "open_now": booking.get("open_now", False),
         "when": booking.get("when", ""),
     }
-    return _msgs(sid, components, data_model)
+    return _msgs(sid, components, data_model, theme=booking.get("theme"))
 
 
 # ── Step 2: Results — a photo card per match with a Select button ────────────
@@ -174,7 +192,7 @@ def results_step(booking: dict) -> list[dict]:
         children += ["empty", "back"]
         components.append(_text("empty", "No restaurants match those filters — widen your search.", variant="body"))
         components += _button("back", "Adjust search", "edit_preferences", variant="borderless")
-        return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None)
+        return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None, theme=booking.get("theme"))
 
     children.append("summary")
     components.append(_text("summary", f"{len(matches)} match — pick one to see details.", variant="body"))
@@ -196,7 +214,7 @@ def results_step(booking: dict) -> list[dict]:
 
     children.append("back")
     components += _button("back", "← Adjust search", "edit_preferences", variant="borderless")
-    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None)
+    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None, theme=booking.get("theme"))
 
 
 # ── Step 3: Detail — Tabs (Overview w/ photo · Menu · Reviews+modal · Location) ─
@@ -208,7 +226,7 @@ def detail_step(booking: dict) -> list[dict]:
         comps = [_card("root", "col"), _col("col", ["oops", "back"]),
                  _text("oops", "That restaurant is no longer available.", variant="body")]
         comps += _button("back", "← Back to results", "back_to_results", variant="borderless")
-        return _msgs(sid, comps, None)
+        return _msgs(sid, comps, None, theme=booking.get("theme"))
 
     components = [
         _card("root", "col"),
@@ -218,12 +236,12 @@ def detail_step(booking: dict) -> list[dict]:
                        ("Reviews", "t_rev"), ("Location", "t_loc")]),
     ]
 
-    # Overview tab — photo + description + stats
+    # Overview tab — photo + description + stats  (body variant = bigger tab text)
     components += [
         _col("t_ov", ["ov_img", "ov_desc", "ov_stats"]),
         _image("ov_img", r["image"], variant="mediumFeature"),
         _text("ov_desc", r["description"], variant="body"),
-        _text("ov_stats", f"★ {r['rating']} · ~${r['avg_price']}/person · {r['seats']} seats free", variant="caption"),
+        _text("ov_stats", f"★ {r['rating']} · ~${r['avg_price']}/person · {r['seats']} seats free", variant="body"),
     ]
 
     # Menu tab — one line per dish
@@ -236,7 +254,7 @@ def detail_step(booking: dict) -> list[dict]:
     rev_ids = [f"rev_{i}" for i in range(len(r["reviews"]))]
     components.append(_col("t_rev", rev_ids + ["rev_modal"]))
     for i, rev in enumerate(r["reviews"]):
-        components.append(_text(f"rev_{i}", f"“{rev['text']}”", variant="caption"))
+        components.append(_text(f"rev_{i}", f"“{rev['text']}”", variant="body"))
     components += [
         _modal("rev_modal", "rev_entry", "rev_card"),
         _text("rev_entry", "📄 View review sources", variant="body"),
@@ -245,20 +263,23 @@ def detail_step(booking: dict) -> list[dict]:
         _text("rev_hdr", "Review sources", variant="h5"),
     ]
     for i, rev in enumerate(r["reviews"]):
-        components.append(_text(f"revsrc_{i}", f"**{rev['id']}** — {rev['text']}", variant="caption"))
+        # variant "body" (not caption): markdown bold only renders in body Text in GE v0.9.
+        components.append(_text(f"revsrc_{i}", f"**{rev['id']}** — {rev['text']}", variant="body"))
 
-    # Location tab
+    # Location tab — address + a Google Maps link (Text markdown link) + hours
+    maps_url = "https://www.google.com/maps/search/?api=1&query=" + quote(r["address"])
     components += [
-        _col("t_loc", ["loc_addr", "loc_hours"]),
+        _col("t_loc", ["loc_addr", "loc_map", "loc_hours"]),
         _text("loc_addr", f"📍 {r['address']}", variant="body"),
-        _text("loc_hours", r["hours"], variant="caption"),
+        _text("loc_map", f"[🗺️ Open in Google Maps]({maps_url})", variant="body"),
+        _text("loc_hours", f"🕐 {r['hours']}", variant="body"),
     ]
 
     # Actions — Reserve (primary) + Back (borderless)
     components.append(_row("actions", ["reserve", "back"], justify="spaceBetween"))
     components += _button("reserve", "Reserve a table", "start_reservation", variant="primary")
     components += _button("back", "← Back to results", "back_to_results", variant="borderless")
-    return _msgs(sid, components, None)
+    return _msgs(sid, components, None, theme=booking.get("theme"))
 
 
 # ── Step 4: Reservation — form (server-validated in the callback) ────────────
@@ -294,7 +315,7 @@ def reservation_step(booking: dict) -> list[dict]:
         "party_size": booking.get("party_size", 2),
         "res_when": booking.get("res_when") or booking.get("when", ""),
     }
-    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, data_model)
+    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, data_model, theme=booking.get("theme"))
 
 
 # ── Step 5: Confirmation ─────────────────────────────────────────────────────
@@ -309,7 +330,7 @@ def confirmation_step(booking: dict) -> list[dict]:
         _text("summary", confirmation_summary(booking), variant="body"),
     ]
     components += _button("new", "Start a new search", "new_search", variant="borderless")
-    return _msgs(sid, components, None)
+    return _msgs(sid, components, None, theme=booking.get("theme"))
 
 
 def confirmation_summary(booking: dict) -> str:
@@ -337,6 +358,8 @@ _ACTION_LABELS = {
     "edit_preferences": "Adjust search",
     "confirm_reservation": "Confirm reservation",
     "new_search": "Start a new search",
+    "back_to_gallery": "All components",
+    "exit_gallery": "Back to booking",
 }
 
 
@@ -349,4 +372,7 @@ def action_echo(action: dict, booking: dict) -> str | None:
     if name == "find_tables":
         cu = booking.get("cuisine") or []
         return f"Find tables · {', '.join(c.title() for c in cu) if cu else 'Any cuisine'}"
-    return _ACTION_LABELS.get(name)
+    if name == "show_component":
+        comp = booking.get("demo_component") or ""
+        return f"Component · {comp}" if comp else "Component"
+    return _ACTION_LABELS.get(name)  # set_theme → None (no echo)

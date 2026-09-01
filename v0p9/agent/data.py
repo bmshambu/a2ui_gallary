@@ -13,6 +13,19 @@ CUISINES = [
     {"label": "Indian", "value": "indian"},
 ]
 
+# Surface themes the user can pick (applied via createSurface.theme.primaryColor).
+THEMES = [
+    {"label": "Ocean", "value": "ocean"},
+    {"label": "Sunset", "value": "sunset"},
+    {"label": "Forest", "value": "forest"},
+    {"label": "Berry", "value": "berry"},
+    {"label": "Slate", "value": "slate"},
+]
+THEME_COLORS = {
+    "ocean": "#2f6bff", "sunset": "#e8590c", "forest": "#2f9e44",
+    "berry": "#ae3ec9", "slate": "#495057",
+}
+
 DIETARY = [
     {"label": "Vegetarian", "value": "vegetarian"},
     {"label": "Vegan", "value": "vegan"},
