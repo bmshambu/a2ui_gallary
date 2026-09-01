@@ -42,7 +42,7 @@ def hello_v09_messages() -> list[dict]:
                     {"id": "root", "component": "Column", "children": ["card"], "align": "stretch"},
                     {"id": "card", "component": "Card", "child": "inner"},
                     {"id": "inner", "component": "Column",
-                     "children": ["title", "subtitle", "btnrow"], "align": "stretch"},
+                     "children": ["title", "subtitle", "img", "img_note", "btnrow"], "align": "stretch"},
 
                     {"id": "title", "component": "Text",
                      "text": "Hello, A2UI v0.9 👋", "variant": "h4"},
@@ -50,6 +50,17 @@ def hello_v09_messages() -> list[dict]:
                      "text": "If you can see this card and the three buttons below, "
                              "A2UI v0.9 renders natively in Gemini Enterprise.",
                      "variant": "body"},
+
+                    # IMAGE TEST: v0.9 basic-catalog Image with an external (Google-hosted)
+                    # URL. In v0.8, external images hard-500'd in GE. If this renders, v0.9
+                    # lifted the block; if the card errors/blanks, images are still blocked.
+                    {"id": "img", "component": "Image",
+                     "url": "https://www.gstatic.com/webp/gallery/1.jpg",
+                     "fit": "cover", "variant": "largeFeature",
+                     "description": "v0.9 image render test"},
+                    {"id": "img_note", "component": "Text",
+                     "text": "↑ image test — visible = v0.9 renders images; missing/error = still blocked (like v0.8).",
+                     "variant": "caption"},
 
                     {"id": "btnrow", "component": "Row",
                      "children": ["b1", "b2", "b3"], "justify": "start"},

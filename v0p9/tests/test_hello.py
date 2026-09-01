@@ -56,6 +56,15 @@ def test_flat_discriminator_shape():
         assert isinstance(c["component"], str)
 
 
+def test_includes_image_render_test():
+    comps = hello_v09_messages()[1]["updateComponents"]["components"]
+    imgs = [c for c in comps if c["component"] == "Image"]
+    assert len(imgs) == 1
+    img = imgs[0]
+    assert img["url"].startswith("https://")
+    assert img["fit"] == "cover" and img["variant"] == "largeFeature"
+
+
 def test_roundtrips_through_a2a_converter():
     # same transport as v0.8: each message wraps into an A2A DataPart w/ the a2ui mime
     for m in hello_v09_messages():

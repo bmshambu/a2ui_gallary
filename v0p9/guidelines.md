@@ -181,9 +181,25 @@ Living record of what we actually confirmed on GE, from the `v0p9/` Hello-Materi
   catalogId URL is not in any public repo** (`google/A2UI` ships only the *basic* catalog).
 - ✅ **Basic catalog `catalogId` is public and GE-accepted:**
   `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`
-- 🔄 **Attempt #3 — switched probe to the basic catalog.** Testing render. Basic gives Button
-  `variant` (default/primary/borderless) — real v0.9, though full colour/elevation needs the
-  (still-unknown) Material catalogId.
+- ✅ **Attempt #3 — basic catalog RENDERS in GE. v0.9 confirmed working end-to-end.** 🎉
+  The card, `h4` title, `body` subtitle, and three buttons all rendered. Button **`variant` shows
+  real styling**: `primary` = **blue filled**, `borderless` = text-only, `default` = outlined —
+  already richer than v0.8's `primary` boolean. Card renders bordered; Column/Row layout works.
+  Clicking a Button fires its `action.event` → the same GE **"User action triggered."** bubble as
+  v0.8 (uneditable — our click-echo mitigation still applies) and the next turn rendered a fresh card.
+
+**Confirmed working recipe (copy this):**
+```json
+{"version":"v0.9","createSurface":{"surfaceId":"s","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","sendDataModel":false}}
+{"version":"v0.9","updateComponents":{"surfaceId":"s","components":[
+  {"id":"root","component":"Column","children":["title","btn"],"align":"stretch"},
+  {"id":"title","component":"Text","text":"Hello","variant":"h4"},
+  {"id":"btn","component":"Button","child":"lbl","variant":"primary","action":{"event":{"name":"clicked"}}},
+  {"id":"lbl","component":"Text","text":"Primary"}
+]}}
+```
+Transport = the v0.8 `<a2a_datapart_json>` wrapper (`mimeType application/json+a2ui`), one message
+per DataPart. `"version":"v0.9"` on every message is mandatory.
 
 ### Basic catalog v0.9 component shapes (CONFIRMED from google/A2UI schema)
 | Component | Props |
@@ -196,8 +212,25 @@ Living record of what we actually confirmed on GE, from the `v0p9/` Hello-Materi
 Basic catalog components (all): AudioPlayer, Button, Card, CheckBox, ChoicePicker, Column,
 DateTimeInput, Divider, Icon, Image, List, Modal, Row, Slider, Tabs, Text, TextField, Video.
 
-### Still to get / confirm
-- **The Material catalog's `catalogId` URL** — needed for colour/elevation. Ask the GE admin /
-  check the GE console, or a GE-provided sample; it's not public. Until then, basic catalog only.
-- Does the basic catalog render in GE end-to-end (attempt #3)? Do buttons/`variant` show?
-- Are `createSurface` + `updateComponents` enough (no render trigger)?
+### Confirmed by attempt #3
+- ✅ Basic catalog renders in GE; `createSurface` + `updateComponents` are enough (no render trigger needed).
+- ✅ `variant` styling works (primary=blue filled / borderless / default=outlined).
+- ✅ `action.event` round-trips (click → "User action triggered" bubble → next turn).
+
+### Images (v0.9)
+- ✅ **Spec supports Image/Video/AudioPlayer** in the basic catalog. `Image`: `url`, `description`,
+  `fit` (contain/cover/fill/none/scaleDown), `variant` (icon/avatar/smallFeature/mediumFeature/
+  largeFeature/header) — richer than v0.8.
+- 🔄 **GE render test in progress** — probe now includes an `Image` with an external Google-hosted
+  URL (`gstatic`). v0.8 hard-500'd on external images; testing whether v0.9 lifts that. **Update
+  with the verdict.**
+
+### Still open
+- **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components
+  (color/accent/warn, MaterialTable, MaterialExpansionPanel, MaterialChips, elevation). It's
+  GE-proprietary and not public — get it from the GE Admin console / a GE sample / GE support.
+  **Not a blocker:** the basic catalog already covers the concierge (ChoicePicker, Slider,
+  DateTimeInput, Tabs, Modal, List, Card, CheckBox, TextField, Button+variant) + v0.9 wins
+  (flat format, `formatString`, `checks`, List templates).
+- How does the click **event** arrive back to the agent in v0.9 (shape of the incoming userAction)?
+  — confirm when we wire interactions in the concierge.
