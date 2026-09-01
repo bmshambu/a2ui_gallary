@@ -95,6 +95,28 @@ def _datetime(comp_id: str, path: str, *, label: str) -> dict:
             "value": {"path": path}, "enableDate": True, "enableTime": True}
 
 
+def _textfield(comp_id: str, path: str, *, label: str, variant: str = "shortText") -> dict:
+    return {"id": comp_id, "component": "TextField", "label": label,
+            "variant": variant, "value": {"path": path}}
+
+
+def _image(comp_id: str, url: str, *, variant: str = "mediumFeature", fit: str = "cover") -> dict:
+    return {"id": comp_id, "component": "Image", "url": url, "fit": fit, "variant": variant}
+
+
+def _tabs(comp_id: str, tabs: list[tuple[str, str]]) -> dict:
+    return {"id": comp_id, "component": "Tabs",
+            "tabs": [{"title": t, "child": c} for t, c in tabs]}
+
+
+def _modal(comp_id: str, trigger: str, content: str) -> dict:
+    return {"id": comp_id, "component": "Modal", "trigger": trigger, "content": content}
+
+
+def _divider(comp_id: str, axis: str = "horizontal") -> dict:
+    return {"id": comp_id, "component": "Divider", "axis": axis}
+
+
 # ── Step 1: Preferences ──────────────────────────────────────────────────────
 
 def preferences_step(booking: dict) -> list[dict]:
@@ -136,7 +158,7 @@ def preferences_step(booking: dict) -> list[dict]:
     return _msgs(sid, components, data_model)
 
 
-# ── Step 2: Results (placeholder — full UI is the next port step) ────────────
+# ── Step 2: Results — a photo card per match with a Select button ────────────
 
 def results_step(booking: dict) -> list[dict]:
     sid = _surface("results")
@@ -144,15 +166,187 @@ def results_step(booking: dict) -> list[dict]:
         booking.get("cuisine", []), booking.get("dietary", []), booking.get("budget", 100),
         booking.get("min_rating", 0), booking.get("outdoor", False), booking.get("open_now", False),
     )
-    names = ", ".join(r["name"] for r in matches) or "no restaurants"
+
+    children = ["title"]
+    components = [_text("title", "Available tables", variant="h4")]
+
+    if not matches:
+        children += ["empty", "back"]
+        components.append(_text("empty", "No restaurants match those filters — widen your search.", variant="body"))
+        components += _button("back", "Adjust search", "edit_preferences", variant="borderless")
+        return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None)
+
+    children.append("summary")
+    components.append(_text("summary", f"{len(matches)} match — pick one to see details.", variant="body"))
+
+    for i, r in enumerate(matches):
+        card, inner, img, name, meta, pick = (
+            f"card_{i}", f"inner_{i}", f"img_{i}", f"name_{i}", f"meta_{i}", f"pick_{i}")
+        children.append(card)
+        components += [
+            _card(card, inner),
+            _col(inner, [img, name, meta, pick]),
+            _image(img, r["image"], variant="smallFeature"),
+            _text(name, r["name"], variant="h5"),
+            _text(meta, f"{r['cuisine'].title()} · ${r['avg_price']}/person · ★{r['rating']} · {r['seats']} seats",
+                  variant="caption"),
+        ]
+        components += _button(pick, "Select", "select_restaurant",
+                              {"restaurant_id": r["id"]}, variant="primary")
+
+    children.append("back")
+    components += _button("back", "← Adjust search", "edit_preferences", variant="borderless")
+    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None)
+
+
+# ── Step 3: Detail — Tabs (Overview w/ photo · Menu · Reviews+modal · Location) ─
+
+def detail_step(booking: dict) -> list[dict]:
+    sid = _surface("detail")
+    r = data.get(booking.get("restaurant_id") or "")
+    if not r:
+        comps = [_card("root", "col"), _col("col", ["oops", "back"]),
+                 _text("oops", "That restaurant is no longer available.", variant="body")]
+        comps += _button("back", "← Back to results", "back_to_results", variant="borderless")
+        return _msgs(sid, comps, None)
+
     components = [
         _card("root", "col"),
-        _col("col", ["title", "summary", "back"]),
-        _text("title", "Results", variant="h4"),
-        _text("summary",
-              f"Your search matched **{len(matches)}**: {names}. "
-              "(The full results UI — cards, photos, select buttons — is the next port step.)",
-              variant="body"),
+        _col("col", ["title", "tabs", "actions"]),
+        _text("title", r["name"], variant="h4"),
+        _tabs("tabs", [("Overview", "t_ov"), ("Menu", "t_menu"),
+                       ("Reviews", "t_rev"), ("Location", "t_loc")]),
     ]
-    components += _button("back", "← Adjust search", "edit_preferences", variant="borderless")
+
+    # Overview tab — photo + description + stats
+    components += [
+        _col("t_ov", ["ov_img", "ov_desc", "ov_stats"]),
+        _image("ov_img", r["image"], variant="mediumFeature"),
+        _text("ov_desc", r["description"], variant="body"),
+        _text("ov_stats", f"★ {r['rating']} · ~${r['avg_price']}/person · {r['seats']} seats free", variant="caption"),
+    ]
+
+    # Menu tab — one line per dish
+    menu_ids = [f"dish_{i}" for i in range(len(r["menu"]))]
+    components.append(_col("t_menu", menu_ids))
+    for i, dish in enumerate(r["menu"]):
+        components.append(_text(f"dish_{i}", f"**{dish['name']}** — ${dish['price']:.2f}", variant="body"))
+
+    # Reviews tab — quotes + a Modal listing the review sources
+    rev_ids = [f"rev_{i}" for i in range(len(r["reviews"]))]
+    components.append(_col("t_rev", rev_ids + ["rev_modal"]))
+    for i, rev in enumerate(r["reviews"]):
+        components.append(_text(f"rev_{i}", f"“{rev['text']}”", variant="caption"))
+    components += [
+        _modal("rev_modal", "rev_entry", "rev_card"),
+        _text("rev_entry", "📄 View review sources", variant="body"),
+        _card("rev_card", "rev_content"),
+        _col("rev_content", ["rev_hdr"] + [f"revsrc_{i}" for i in range(len(r["reviews"]))]),
+        _text("rev_hdr", "Review sources", variant="h5"),
+    ]
+    for i, rev in enumerate(r["reviews"]):
+        components.append(_text(f"revsrc_{i}", f"**{rev['id']}** — {rev['text']}", variant="caption"))
+
+    # Location tab
+    components += [
+        _col("t_loc", ["loc_addr", "loc_hours"]),
+        _text("loc_addr", f"📍 {r['address']}", variant="body"),
+        _text("loc_hours", r["hours"], variant="caption"),
+    ]
+
+    # Actions — Reserve (primary) + Back (borderless)
+    components.append(_row("actions", ["reserve", "back"], justify="spaceBetween"))
+    components += _button("reserve", "Reserve a table", "start_reservation", variant="primary")
+    components += _button("back", "← Back to results", "back_to_results", variant="borderless")
     return _msgs(sid, components, None)
+
+
+# ── Step 4: Reservation — form (server-validated in the callback) ────────────
+
+def reservation_step(booking: dict) -> list[dict]:
+    sid = _surface("reserve")
+    error = booking.get("_error")
+    r = data.get(booking.get("restaurant_id") or "")
+    name = r["name"] if r else "your table"
+
+    children = ["title"]
+    components = [_text("title", f"Reserve at {name}", variant="h4")]
+    if error:
+        children.append("error")
+        components.append(_text("error", f"⚠️ {error}", variant="body"))
+    children += ["res_name", "res_contact", "party", "res_when", "confirm"]
+    components += [
+        _textfield("res_name", "/res_name", label="Your name"),
+        _textfield("res_contact", "/res_contact", label="Email or phone"),
+        _slider("party", "/party_size", 1, 12, label="Party size"),
+        _datetime("res_when", "/res_when", label="Date & time"),
+    ]
+    components += _button("confirm", "Confirm reservation", "confirm_reservation", {
+        "name": {"path": "/res_name"},
+        "contact": {"path": "/res_contact"},
+        "party_size": {"path": "/party_size"},
+        "when": {"path": "/res_when"},
+    }, variant="primary")
+
+    data_model = {
+        "res_name": booking.get("res_name", ""),
+        "res_contact": booking.get("res_contact", ""),
+        "party_size": booking.get("party_size", 2),
+        "res_when": booking.get("res_when") or booking.get("when", ""),
+    }
+    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, data_model)
+
+
+# ── Step 5: Confirmation ─────────────────────────────────────────────────────
+
+def confirmation_step(booking: dict) -> list[dict]:
+    sid = _surface("confirm")
+    components = [
+        _card("root", "col"),
+        _col("col", ["title", "div", "summary", "new"]),
+        _text("title", "Reservation confirmed ✅", variant="h4"),
+        _divider("div"),
+        _text("summary", confirmation_summary(booking), variant="body"),
+    ]
+    components += _button("new", "Start a new search", "new_search", variant="borderless")
+    return _msgs(sid, components, None)
+
+
+def confirmation_summary(booking: dict) -> str:
+    r = data.get(booking.get("restaurant_id") or "")
+    lines = []
+    if r:
+        lines.append(f"**{r['name']}** — {r['cuisine'].title()}")
+        lines.append(f"📍 {r['address']}")
+    when = booking.get("res_when") or booking.get("when")
+    if when:
+        lines.append(f"🗓️ {when}")
+    lines.append(f"👥 Party of {booking.get('party_size', 2)}")
+    if booking.get("res_name"):
+        lines.append(f"👤 {booking['res_name']}")
+    if booking.get("res_contact"):
+        lines.append(f"📞 {booking['res_contact']}")
+    return "\n\n".join(lines)
+
+
+# ── click echo (what the user tapped) ────────────────────────────────────────
+
+_ACTION_LABELS = {
+    "start_reservation": "Reserve a table",
+    "back_to_results": "Back to results",
+    "edit_preferences": "Adjust search",
+    "confirm_reservation": "Confirm reservation",
+    "new_search": "Start a new search",
+}
+
+
+def action_echo(action: dict, booking: dict) -> str | None:
+    name = action.get("name")
+    if name == "select_restaurant":
+        rid = (action.get("context") or {}).get("restaurant_id")
+        r = data.get(rid or "")
+        return f"Selected {r['name']}" if r else "Selected a restaurant"
+    if name == "find_tables":
+        cu = booking.get("cuisine") or []
+        return f"Find tables · {', '.join(c.title() for c in cu) if cu else 'Any cuisine'}"
+    return _ACTION_LABELS.get(name)

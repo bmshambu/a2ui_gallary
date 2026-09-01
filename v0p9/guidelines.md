@@ -228,6 +228,23 @@ DateTimeInput, Divider, Icon, Image, List, Modal, Row, Slider, Tabs, Text, TextF
   show restaurant photos. (Tested a Google-hosted host; if a specific host misbehaves, try another,
   but external images are viable in v0.9.)
 
+### Concierge Step 1 (Preferences) — ALL CONFIRMED in GE ✅
+Deployed the v0.9 concierge Preferences surface — everything rendered and worked:
+- ✅ **ChoicePicker `displayStyle: chips`** — renders as selectable chips (selected = blue).
+  Both cuisine and dietary. (Nicer than v0.8's dropdown / the scattered-button problem.)
+- ✅ **Slider** (with value shown), **CheckBox**, **DateTimeInput** (date **and** time pickers,
+  calendar/clock icons) all render natively.
+- ✅ **Button `variant: primary`** = blue filled; `borderless` = text.
+- ✅ **Data-binding WRITE-BACK works** — user's chip/checkbox/slider selections reached the
+  data model via **flat single-segment paths** (`/cuisine`, `/outdoor`, …). (Same rule as v0.8:
+  keep paths flat.)
+- ✅ **`action.event.context` is pre-resolved by GE** — the `find_tables` click arrived with the
+  real selected values (not raw bindings), so `advance()` filtered correctly (Italian + Outdoor
+  → exactly Bella Italia + Trattoria Verde). **No more raw-JSON parsing of typed values** (v0.8 pain gone).
+- ✅ **`updateDataModel` `path:"/" value:{…}`** seeds the initial model.
+- ✅ **Multi-step state machine** (ADK session state) + incoming `{"action":{name,context}}` parsing works.
+- ⚠️ "User action triggered." bubble still appears on click (unchanged from v0.8 — mitigation carries over).
+
 ### Still open
 - **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components
   (color/accent/warn, MaterialTable, MaterialExpansionPanel, MaterialChips, elevation). It's

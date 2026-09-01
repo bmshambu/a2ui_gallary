@@ -150,4 +150,67 @@ class TestCallback:
             "outdoor": False, "open_now": False, "when": ""}}), resp)
         assert state["step"] == "results"
         assert state["booking"]["cuisine"] == ["italian"]
-        assert "matched" in str(_a2ui(resp))
+        # results now shows photo cards + Select buttons
+        ids = [c["id"] for m in _a2ui(resp) if "updateComponents" in m
+               for c in m["updateComponents"]["components"]]
+        assert any(i.startswith("pick_") for i in ids)
+
+
+BOOKED = {**DEFAULT_BOOKING, "cuisine": ["italian"], "restaurant_id": "bella-italia",
+          "res_name": "Sam", "res_contact": "sam@x.com", "res_when": "2026-08-01 19:00", "party_size": 4}
+
+
+class TestFullSteps:
+    def _comps(self, msgs):
+        return msgs[1]["updateComponents"]["components"]
+
+    def test_results_has_photo_cards_and_select(self):
+        msgs = concierge.results_step({**DEFAULT_BOOKING, "budget": 100})
+        assert _roundtrip_ok(msgs)
+        kinds = {c["component"] for c in self._comps(msgs)}
+        assert "Image" in kinds
+        assert any(c["id"].startswith("pick_") for c in self._comps(msgs))
+
+    def test_detail_has_tabs_image_modal(self):
+        msgs = concierge.detail_step(BOOKED)
+        assert _roundtrip_ok(msgs)
+        kinds = {c["component"] for c in self._comps(msgs)}
+        assert {"Tabs", "Image", "Modal"} <= kinds
+        tabs = next(c for c in self._comps(msgs) if c["component"] == "Tabs")
+        assert [t["title"] for t in tabs["tabs"]] == ["Overview", "Menu", "Reviews", "Location"]
+
+    def test_reservation_form_flat_datamodel(self):
+        msgs = concierge.reservation_step(BOOKED)
+        assert _roundtrip_ok(msgs)
+        kinds = {c["component"] for c in self._comps(msgs)}
+        assert {"TextField", "Slider", "DateTimeInput"} <= kinds
+        dm = msgs[2]["updateDataModel"]["value"]
+        assert all("/" not in k for k in dm)
+
+    def test_confirmation_summary(self):
+        s = concierge.confirmation_summary(BOOKED)
+        assert "Bella Italia" in s and "Party of 4" in s
+
+
+class TestFullAdvance:
+    def test_select_to_detail(self):
+        step, b = advance({"step": "results"}, {"name": "select_restaurant",
+                          "context": {"restaurant_id": "sakura-house"}})
+        assert step == "detail" and b["restaurant_id"] == "sakura-house"
+
+    def test_confirm_valid_to_confirmation(self):
+        act = {"name": "confirm_reservation", "context": {
+            "name": "Sam", "contact": "sam@x.com", "party_size": 3, "when": "2026-08-02 20:00"}}
+        step, b = advance({"step": "reservation", "booking": dict(BOOKED)}, act)
+        assert step == "confirmation" and b["res_name"] == "Sam" and b["_error"] is None
+
+    def test_confirm_invalid_returns_error(self):
+        act = {"name": "confirm_reservation", "context": {
+            "name": "", "contact": "", "party_size": 2, "when": ""}}
+        step, b = advance({"step": "reservation", "booking": dict(DEFAULT_BOOKING)}, act)
+        assert step == "reservation" and b["_error"]
+
+    def test_new_search_resets(self):
+        step, b = advance({"step": "confirmation", "booking": dict(BOOKED)},
+                          {"name": "new_search", "context": {}})
+        assert step == "preferences" and b["restaurant_id"] is None

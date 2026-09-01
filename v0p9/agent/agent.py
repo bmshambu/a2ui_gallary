@@ -103,16 +103,23 @@ def _extract_action(content) -> dict | None:
 DEFAULT_BOOKING = {
     "cuisine": [], "dietary": [], "budget": 50, "min_rating": 0,
     "outdoor": False, "open_now": False, "when": "", "restaurant_id": None,
+    "res_name": "", "res_contact": "", "party_size": 2, "res_when": "", "_error": None,
 }
 
 STEP_BUILDERS = {
     "preferences": concierge.preferences_step,
     "results": concierge.results_step,
+    "detail": concierge.detail_step,
+    "reservation": concierge.reservation_step,
+    "confirmation": concierge.confirmation_step,
 }
 
 STEP_TEXT = {
     "preferences": "👋 Welcome to the Concierge (v0.9). Set your preferences and tap **Find tables**.",
     "results": "Here's what matched your search.",
+    "detail": "Explore the tabs, then reserve when you're ready.",
+    "reservation": "Almost done — enter your details to book.",
+    "confirmation": "🎉 You're all set — your booking is below.",
 }
 
 
@@ -138,6 +145,7 @@ def advance(state, action) -> tuple[str, dict]:
         return step, booking
     name = action.get("name")
     ctx = action.get("context") or {}
+    booking["_error"] = None
     if name == "find_tables":
         booking["cuisine"] = _as_list(ctx.get("cuisine"))
         booking["dietary"] = _as_list(ctx.get("dietary"))
@@ -147,9 +155,41 @@ def advance(state, action) -> tuple[str, dict]:
         booking["open_now"] = _as_bool(ctx.get("open_now"))
         booking["when"] = str(ctx.get("when") or "")
         step = "results"
+    elif name == "select_restaurant":
+        booking["restaurant_id"] = str(ctx.get("restaurant_id") or "")
+        step = "detail"
+    elif name == "start_reservation":
+        step = "reservation"
+    elif name == "back_to_results":
+        step = "results"
     elif name == "edit_preferences":
         step = "preferences"
+    elif name == "confirm_reservation":
+        booking["res_name"] = str(ctx.get("name") or "").strip()
+        booking["res_contact"] = str(ctx.get("contact") or "").strip()
+        booking["party_size"] = int(_as_num(ctx.get("party_size"), 2))
+        booking["res_when"] = str(ctx.get("when") or booking.get("when") or "")
+        err = _validate_reservation(booking)
+        if err:
+            booking["_error"] = err
+            step = "reservation"
+        else:
+            step = "confirmation"
+    elif name == "new_search":
+        booking = dict(DEFAULT_BOOKING)
+        step = "preferences"
     return step, booking
+
+
+def _validate_reservation(b: dict) -> str | None:
+    """Server-side validation (reliable) — same approach as the v0.8 build."""
+    if not b.get("res_name"):
+        return "Please enter your name."
+    if not b.get("res_contact"):
+        return "Please provide an email or phone number."
+    if not b.get("res_when"):
+        return "Please choose a date and time."
+    return None
 
 
 def _append_step(callback_context: CallbackContext, llm_response: LlmResponse):
@@ -172,9 +212,14 @@ def _append_step(callback_context: CallbackContext, llm_response: LlmResponse):
     callback_context.state["booking"] = booking
     callback_context.state["step"] = step
 
+    text = STEP_TEXT.get(step, "")
+    if action:  # echo what the user tapped (GE's "User action triggered." is uneditable)
+        echo = concierge.action_echo(action, booking)
+        if echo:
+            text = f"> {echo}\n\n{text}"
     for p in content.parts:
         if p.text is not None:
-            p.text = STEP_TEXT.get(step, "")
+            p.text = text
             break
 
     for message in STEP_BUILDERS[step](booking):

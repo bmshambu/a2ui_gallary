@@ -138,6 +138,19 @@ _FEATURES = {
 for _r in RESTAURANTS:
     _r.update(_FEATURES[_r["id"]])
 
+# Photos — v0.9 renders external images in GE (confirmed). Using Google-hosted
+# gstatic sample images (reliable host); swap for real food photos on any host you
+# confirm renders. (Placeholder landscapes, but they exercise the Image component.)
+_IMAGES = {
+    "bella-italia": "https://www.gstatic.com/webp/gallery/1.jpg",
+    "sakura-house": "https://www.gstatic.com/webp/gallery/2.jpg",
+    "el-fuego": "https://www.gstatic.com/webp/gallery/3.jpg",
+    "spice-route": "https://www.gstatic.com/webp/gallery/4.jpg",
+    "trattoria-verde": "https://www.gstatic.com/webp/gallery/5.jpg",
+}
+for _r in RESTAURANTS:
+    _r["image"] = _IMAGES[_r["id"]]
+
 _BY_ID = {r["id"]: r for r in RESTAURANTS}
 
 
