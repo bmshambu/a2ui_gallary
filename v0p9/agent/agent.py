@@ -105,6 +105,7 @@ DEFAULT_BOOKING = {
     "outdoor": False, "open_now": False, "when": "", "restaurant_id": None,
     "res_name": "", "res_contact": "", "party_size": 2, "res_when": "", "_error": None,
     "theme": None, "theme_sel": [], "demo_component": "",
+    "align": "stretch", "align_sel": [],
 }
 
 STEP_BUILDERS = {
@@ -120,8 +121,8 @@ STEP_BUILDERS = {
 }
 
 STEP_TEXT = {
-    "theme": "👋 Welcome to the Concierge (v0.9). First, pick a colour theme and tap **Apply theme**.",
-    "preferences": "🎨 Theme applied. Now set your preferences and tap **Find tables**.",
+    "theme": "👋 Welcome to the Concierge (v0.9). First, set your **design preference** — colour + layout — and tap **Apply**.",
+    "preferences": "🎨 Design applied. Now set your preferences and tap **Find tables**.",
     "results": "Here's what matched your search.",
     "detail": "Explore the tabs, then reserve when you're ready.",
     "reservation": "Almost done — enter your details to book.",
@@ -184,16 +185,22 @@ def advance(state, action) -> tuple[str, dict]:
         else:
             step = "confirmation"
     elif name == "new_search":
-        # fresh search but keep the theme the user already chose (no re-picking)
-        keep = {"theme": booking.get("theme"), "theme_sel": booking.get("theme_sel", [])}
+        # fresh search but keep the design preference the user already chose (no re-picking)
+        keep = {"theme": booking.get("theme"), "theme_sel": booking.get("theme_sel", []),
+                "align": booking.get("align", "stretch"), "align_sel": booking.get("align_sel", [])}
         booking = {**DEFAULT_BOOKING, **keep}
         step = "preferences"
-    elif name == "set_theme":
+    elif name == "set_theme":  # Design preference: colour + layout alignment
         sel = ctx.get("theme")
         key = sel[0] if isinstance(sel, list) and sel else (sel if isinstance(sel, str) else None)
         booking["theme"] = data.THEME_COLORS.get(key)
         booking["theme_sel"] = sel if isinstance(sel, list) else ([sel] if sel else [])
-        # theme is the gate → once applied, move on to Find a table
+        asel = ctx.get("align")
+        akey = asel[0] if isinstance(asel, list) and asel else (asel if isinstance(asel, str) else None)
+        if akey in data.ALIGN_VALUES:
+            booking["align"] = akey
+        booking["align_sel"] = asel if isinstance(asel, list) else ([asel] if asel else [])
+        # design preference is the gate → once applied, move on to Find a table
         step = "preferences"
     elif name == "show_component":
         booking["demo_component"] = str(ctx.get("component") or "")

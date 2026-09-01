@@ -25,28 +25,14 @@ def _surface(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _mix_white(hex_color: str, amount: float) -> str:
-    """Lighten a #RRGGBB hex toward white by `amount` (0=unchanged, 1=white)."""
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    r, g, b = (round(c + (255 - c) * amount) for c in (r, g, b))
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
 def _msgs(surface_id: str, components: list[dict], data_model: dict | None,
           theme: str | None = None) -> list[dict]:
     create = {"surfaceId": surface_id, "catalogId": CATALOG_BASIC, "sendDataModel": False}
-    if theme:  # a hex like "#e8590c" — brands primary buttons / active borders
-        create["theme"] = {
-            "primaryColor": theme,
-            # PROBE: undocumented theme keys. The catalog's theme schema is
-            # additionalProperties:true, so these won't be rejected. Testing whether GE
-            # honors a page/card background (basic Card has no per-component bg). If GE
-            # ignores them there's no harm; if it paints, that's a new styling lever.
-            "backgroundColor": _mix_white(theme, 0.90),  # soft page tint
-            "surfaceColor": _mix_white(theme, 0.96),     # near-white card ground
-            "secondaryColor": theme,
-        }
+    if theme:  # a hex like "#e8590c" — brands primary buttons / active borders / slider tracks.
+        # Only primaryColor is honored on the basic catalog. Undocumented theme keys
+        # (backgroundColor/surfaceColor/secondaryColor) were probed and GE ignored them
+        # (2026-09-01) — card/page background stays white; that needs the Material catalog.
+        create["theme"] = {"primaryColor": theme}
     msgs = [
         {"version": "v0.9", "createSurface": create},
         {"version": "v0.9", "updateComponents": {"surfaceId": surface_id, "components": components}},
@@ -141,6 +127,36 @@ def _divider(comp_id: str, axis: str = "horizontal") -> dict:
     return {"id": comp_id, "component": "Divider", "axis": axis}
 
 
+def _spacer(comp_id: str) -> dict:
+    """A blank line used to fake vertical padding/gap.
+
+    Basic-catalog components have no `padding`/`gap` property, so the only way to
+    loosen tight layouts is (a) `justify: spaceBetween/Around/Evenly` on Row/Column,
+    or (b) inject empty Text lines between children. This is (b) — a body Text holding
+    a non-breaking space so the renderer gives it a full line's height.
+    """
+    return _text(comp_id, " ", variant="body")
+
+
+def _align(booking: dict) -> str:
+    """The user's chosen layout alignment (Design preference), applied to every step's
+    root Column cross-axis. Falls back to 'stretch' (justified/full-width)."""
+    a = (booking or {}).get("align")
+    return a if a in data.ALIGN_VALUES else "stretch"
+
+
+def _spaced(children: list[str], comps_out: list[dict], prefix: str) -> list[str]:
+    """Interleave a `_spacer` between each id in `children` (loosens vertical rhythm)."""
+    out: list[str] = []
+    for i, cid in enumerate(children):
+        if i:
+            sp = f"{prefix}_sp{i}"
+            comps_out.append(_spacer(sp))
+            out.append(sp)
+        out.append(cid)
+    return out
+
+
 # ── Step 0: Theme — the first interaction; gates the rest of the flow ─────────
 
 def theme_step(booking: dict) -> list[dict]:
@@ -150,19 +166,22 @@ def theme_step(booking: dict) -> list[dict]:
     (confirmed in GE: theme.primaryColor repaints buttons/borders/sliders).
     """
     sid = _surface("theme")
-    children = ["title", "sub", "theme", "apply"]
+    children = ["title", "sub", "theme", "align", "apply"]
     components = [
         _card("root", "col"),
-        _col("col", children),
-        _text("title", "Choose your theme", variant="h4"),
-        _text("sub", "Pick a colour to personalise your concierge — then we'll find you a table.",
+        _col("col", children, align=_align(booking)),
+        _text("title", "Design preference", variant="h4"),
+        _text("sub", "Pick a colour and a layout — they'll apply across the whole concierge.",
               variant="body"),
         _choice("theme", "/theme_sel", data.THEMES, label="Colour theme",
                 variant="mutuallyExclusive", display="chips"),
+        _choice("align", "/align_sel", data.ALIGNMENTS, label="Layout alignment",
+                variant="mutuallyExclusive", display="chips"),
     ]
-    components += _button("apply", "Apply theme", "set_theme",
-                          {"theme": {"path": "/theme_sel"}}, variant="primary")
-    data_model = {"theme_sel": booking.get("theme_sel", [])}
+    components += _button("apply", "Apply", "set_theme",
+                          {"theme": {"path": "/theme_sel"}, "align": {"path": "/align_sel"}},
+                          variant="primary")
+    data_model = {"theme_sel": booking.get("theme_sel", []), "align_sel": booking.get("align_sel", [])}
     return _msgs(sid, components, data_model, theme=booking.get("theme"))
 
 
@@ -176,7 +195,7 @@ def preferences_step(booking: dict) -> list[dict]:
     ]
     components = [
         _card("root", "col"),
-        _col("col", children),
+        _col("col", children, align=_align(booking)),  # Design-preference alignment
         _text("title", "Find a table", variant="h4"),
         _choice("cuisine", "/cuisine", data.CUISINES, label="Cuisine", filterable=True),
         _choice("dietary", "/dietary", data.DIETARY, label="Dietary needs", filterable=True),
@@ -223,7 +242,7 @@ def results_step(booking: dict) -> list[dict]:
         children += ["empty", "back"]
         components.append(_text("empty", "No restaurants match those filters — widen your search.", variant="body"))
         components += _button("back", "Adjust search", "edit_preferences", variant="borderless")
-        return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None, theme=booking.get("theme"))
+        return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"))
 
     children.append("summary")
     components.append(_text("summary", f"{len(matches)} match — pick one to see details.", variant="body"))
@@ -245,7 +264,7 @@ def results_step(booking: dict) -> list[dict]:
 
     children.append("back")
     components += _button("back", "← Adjust search", "edit_preferences", variant="borderless")
-    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, None, theme=booking.get("theme"))
+    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"))
 
 
 # ── Step 3: Detail — Tabs (Overview w/ photo · Menu · Reviews+modal · Location) ─
@@ -254,14 +273,14 @@ def detail_step(booking: dict) -> list[dict]:
     sid = _surface("detail")
     r = data.get(booking.get("restaurant_id") or "")
     if not r:
-        comps = [_card("root", "col"), _col("col", ["oops", "back"]),
+        comps = [_card("root", "col"), _col("col", ["oops", "back"], align=_align(booking)),
                  _text("oops", "That restaurant is no longer available.", variant="body")]
         comps += _button("back", "← Back to results", "back_to_results", variant="borderless")
         return _msgs(sid, comps, None, theme=booking.get("theme"))
 
     components = [
         _card("root", "col"),
-        _col("col", ["title", "tabs", "actions"]),
+        _col("col", ["title", "tabs", "actions"], align=_align(booking)),
         _text("title", r["name"], variant="h4"),
         _tabs("tabs", [("Overview", "t_ov"), ("Menu", "t_menu"),
                        ("Reviews", "t_rev"), ("Location", "t_loc")]),
@@ -286,16 +305,22 @@ def detail_step(booking: dict) -> list[dict]:
     components.append(_col("t_rev", rev_ids + ["rev_modal"]))
     for i, rev in enumerate(r["reviews"]):
         components.append(_text(f"rev_{i}", f"“{rev['text']}”", variant="body"))
+    # Modal content: header + review sources, spacers between each (basic catalog has
+    # no padding/gap — spacer Texts are the only way to loosen the "very tight" spacing).
+    src_ids = [f"revsrc_{i}" for i in range(len(r["reviews"]))]
+    modal_comps: list[dict] = []
+    modal_children = _spaced(["rev_hdr"] + src_ids, modal_comps, "revm")
     components += [
         _modal("rev_modal", "rev_entry", "rev_card"),
         _text("rev_entry", "📄 View review sources", variant="body"),
         _card("rev_card", "rev_content"),
-        _col("rev_content", ["rev_hdr"] + [f"revsrc_{i}" for i in range(len(r["reviews"]))]),
+        _col("rev_content", modal_children),
         _text("rev_hdr", "Review sources", variant="h5"),
     ]
     for i, rev in enumerate(r["reviews"]):
         # variant "body" (not caption): markdown bold only renders in body Text in GE v0.9.
         components.append(_text(f"revsrc_{i}", f"**{rev['id']}** — {rev['text']}", variant="body"))
+    components += modal_comps
 
     # Location tab — address + a Google Maps link (Text markdown link) + hours
     maps_url = "https://www.google.com/maps/search/?api=1&query=" + quote(r["address"])
@@ -346,25 +371,30 @@ def reservation_step(booking: dict) -> list[dict]:
         "party_size": booking.get("party_size", 2),
         "res_when": booking.get("res_when") or booking.get("when", ""),
     }
-    return _msgs(sid, [_card("root", "col"), _col("col", children)] + components, data_model, theme=booking.get("theme"))
+    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, data_model, theme=booking.get("theme"))
 
 
 # ── Step 5: Confirmation ─────────────────────────────────────────────────────
 
 def confirmation_step(booking: dict) -> list[dict]:
     sid = _surface("confirm")
+    # Render each receipt line as its own Text with spacers between — separate
+    # components get real vertical rhythm, unlike one \n\n-joined Text (looks cramped).
+    lines = _confirmation_lines(booking)
+    line_ids = [f"cl_{i}" for i in range(len(lines))]
+    line_comps = [_text(f"cl_{i}", ln, variant="body") for i, ln in enumerate(lines)]
+    spaced = _spaced(line_ids, line_comps, "cl")
     components = [
         _card("root", "col"),
-        _col("col", ["title", "div", "summary", "new"]),
+        _col("col", ["title", "div"] + spaced + ["new"], align=_align(booking)),
         _text("title", "Reservation confirmed ✅", variant="h4"),
         _divider("div"),
-        _text("summary", confirmation_summary(booking), variant="body"),
-    ]
+    ] + line_comps
     components += _button("new", "Start a new search", "new_search", variant="borderless")
     return _msgs(sid, components, None, theme=booking.get("theme"))
 
 
-def confirmation_summary(booking: dict) -> str:
+def _confirmation_lines(booking: dict) -> list[str]:
     r = data.get(booking.get("restaurant_id") or "")
     lines = []
     if r:
@@ -378,7 +408,11 @@ def confirmation_summary(booking: dict) -> str:
         lines.append(f"👤 {booking['res_name']}")
     if booking.get("res_contact"):
         lines.append(f"📞 {booking['res_contact']}")
-    return "\n\n".join(lines)
+    return lines
+
+
+def confirmation_summary(booking: dict) -> str:
+    return "\n\n".join(_confirmation_lines(booking))
 
 
 # ── click echo (what the user tapped) ────────────────────────────────────────
@@ -407,6 +441,13 @@ def action_echo(action: dict, booking: dict) -> str | None:
         comp = booking.get("demo_component") or ""
         return f"Component · {comp}" if comp else "Component"
     if name == "set_theme":
-        sel = booking.get("theme_sel") or []
-        return f"Theme · {sel[0].title()}" if sel else None
+        parts = []
+        tsel = booking.get("theme_sel") or []
+        if tsel:
+            parts.append(tsel[0].title())
+        asel = booking.get("align_sel") or []
+        if asel:
+            labels = {a["value"]: a["label"] for a in data.ALIGNMENTS}
+            parts.append(labels.get(asel[0], asel[0]))
+        return "Design · " + " · ".join(parts) if parts else None
     return _ACTION_LABELS.get(name)

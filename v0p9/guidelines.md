@@ -291,6 +291,40 @@ Deployed all 5 steps; the whole booking journey works end-to-end:
 - 🧩 **Components gallery** — built ("show me the components used" typed trigger → menu →
   per-component demo). Ported from the v0.8 A2UI_advanced gallery.
 
+### Padding / corners / text spacing — schema limits + workarounds (stakeholder Qs, 2026-09-01)
+Checked every basic-catalog component's full property set:
+- **Padding: no property.** Card=`child` only; Column/Row=`children`+`justify`+`align`; Modal=
+  `trigger`+`content`. Google's renderer sets padding automatically. **Levers we DO have** on
+  Column/Row: `justify` ∈ `start·center·end·spaceBetween·spaceAround·spaceEvenly·stretch` (main
+  axis) and `align` ∈ `start·center·end·stretch` (cross axis). To add gaps, use
+  `spaceBetween/Around/Evenly` **or** inject spacer components (see `_spacer` / `_spaced` in
+  concierge.py — a body Text holding `\xa0`, since renderers collapse a trailing regular space).
+- **Modal / Card rounded corners: ❌ not possible on basic.** No `cornerRadius`/`shape`/`elevation`
+  property — box shape is 100% renderer-decided. Rounded modals need Material (`MaterialDialog`/
+  `MaterialCard`).
+- **Font size / line-height / letter-spacing: ❌ none.** Text has only `text` + `variant`
+  (h1–h5·body·caption). Can't set word/letter spacing. **Fix for "text too tight":** don't pack
+  lines into one Text via `\n\n` — split each line into its **own** Text inside a Column (separate
+  components get real vertical rhythm) and interleave `_spacer`s. `body` > `caption` for size.
+  Applied to the reviews Modal and the Confirmation receipt.
+- **Bottom line:** real padding, corner-radius, and typography controls are **Material-catalog**
+  features. On basic, layout = `justify`/`align` + spacer Texts; size = `variant`.
+
+### Design preference step (colour + layout, applied globally)
+The first step is now **"Design preference"** — two `mutuallyExclusive` ChoicePickers on one surface:
+- **Colour theme** → `theme.primaryColor` (confirmed to repaint buttons/chips/sliders).
+- **Layout alignment** → the Column **cross-axis `align`** applied to **every step's root Column**
+  (`Left→start`, `Center→center`, `Justify→stretch`). `data.ALIGNMENTS` maps label→value;
+  `concierge._align(booking)` resolves it (fallback `stretch`).
+The single **Apply** button fires `set_theme` carrying both `{theme, align}` (context bindings
+`/theme_sel`, `/align_sel`); `advance()` stores `booking["align"]` and every builder threads it via
+`_col("col", …, align=_align(booking))`. `new_search` keeps both; echo reads e.g. "Design · Ocean ·
+Center". Pattern worth reusing: **one gated "preferences" surface can carry several global display
+choices at once** (colour, density, alignment) — each a ChoicePicker, all applied on one Apply.
+> Note: `align` is applied to each step's **root** Column only (not nested cards/tab bodies), so
+> inputs inside tabs keep their normal layout. Whether `stretch` vs `start` visibly moves the
+> Slider's built-in value label is renderer-dependent — pending the deploy screenshot.
+
 ### Theme-first flow (theme as the mandatory first interaction)
 The user wanted theme selection to gate the whole flow — for **any** opening question, show the
 theme picker first; only after **Apply theme** does it proceed to "Find a table". Implemented as a
@@ -335,17 +369,52 @@ schema (`unevaluatedProperties:false`); its only props are `child`, `weight`, `i
 There is **no** per-component `backgroundColor`/`color`/`padding`/`fontSize` anywhere in basic — any
 such key is rejected. Per-card/surface colour is a **Material-catalog** feature.
 
-**🚪 Background probe (wired, pending GE verify).** The `theme` object is `additionalProperties:true`,
-so extra theme keys aren't rejected. `_msgs()` now also emits, alongside `primaryColor`:
-`backgroundColor` (soft tint of the theme), `surfaceColor` (near-white), `secondaryColor`. These are
-**undocumented** — GE may ignore them. **Verify on next deploy:** does the page/card ground actually
-change colour with the theme? If yes → new global styling lever (log it ✅). If no → basic caps at
-`primaryColor`, and background is Material-only (log it ❌ and we can drop the extra keys).
+**🚪 Background probe — ❌ REJECTED by GE (2026-09-01).** Even though `theme` is
+`additionalProperties:true` (so `backgroundColor`/`surfaceColor`/`secondaryColor` pass schema
+validation), GE **ignored** them — card/page ground stayed white with a Sunset theme applied.
+Verdict: on the basic catalog **only `primaryColor` is honored**; background/surface colour is a
+**Material-catalog** feature. The probe keys were removed from `_msgs()` — we now send just
+`primaryColor`. Don't bother re-sending background keys on basic.
 
-### Still open
-- **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components
-  (color/accent/warn, MaterialTable, MaterialExpansionPanel, MaterialChips, elevation). It's
-  GE-proprietary and not public — get it from the GE Admin console / a GE sample / GE support.
+### "User action triggered." bubble — NO A2UI fix (schema-confirmed 2026-09-01)
+Checked the v0.9 `Action.event` schema: it's **closed** (`additionalProperties:false`), only
+`name` + `context` — there is **no** `label`/`displayText`/`title` field to set the text of GE's
+right-side "User action triggered." bubble, and any extra key is rejected. The bubble is GE-generated
+chrome for the user's action turn (same class as the auto follow-up chips — GE app-side, not
+agent-provided). The `functionCall` Action branch doesn't help either: basic-catalog client functions
+are only validators/formatters (`required`, `email`, `formatCurrency`, `openUrl`, `and`/`or`/`not`) —
+none advance a server step. **Mitigation (unchanged from v0.8):** own the agent's LEFT-side reply and
+prepend a readable echo via `action_echo()` (e.g. "Theme · Sunset"). If the bubble is suppressible at
+all, it'd be a GE **app/agent config** setting, not an A2UI payload field.
+
+### Material catalog `catalogId` — HUNT RESULTS (2026-09-01)
+Dug hard; the exact string is **not published anywhere public**:
+- ❌ Not on the spec site — probed `…/catalogs/material/catalog.json`, `…/material_catalog.json`,
+  `…/gemini_enterprise_composite_catalog.json`, and even the flat `…/v0_9/basic_catalog.json` a
+  sample used — **all 404**. Only `…/catalogs/basic/catalog.json` exists.
+- ❌ Not in open source — `google/A2UI` ships only `basic_catalog`; no material catalog files.
+- ❌ GE docs ([component gallery](https://docs.cloud.google.com/gemini/enterprise/docs/a2ui-agents/a2ui-component-gallery-reference))
+  list the Material components (MaterialSelect, MaterialTable, MaterialExpansionPanel, MaterialChips,
+  MaterialButtonToggle, MaterialDatepicker, …) but withhold the `catalogId`.
+- 🔑 **Why:** `catalogId` is a **negotiation token**, not a live URL. GE's frontend holds a registry
+  of catalogs it can render; the agent stamps `createSurface.catalogId` with a string GE recognises.
+  URLs are convention (globally-unique, human-inspectable) — GE does **not** fetch them. Our old
+  `"material"` failed with "Catalog not found" because that literal isn't the registered id.
+- GE reportedly ships a **`gemini_enterprise_composite_catalog.json`** (Material + GE components like
+  `GoogleMap`/`WebFrameUrl`), but the exact id string is GE-internal.
+
+**How to obtain it (needs GE/GCP access) — best first:**
+1. **DevTools network capture (no deploy).** In GE, open an experience that renders Material (a Google
+   sample agent / the component-gallery demo). F12 → Network → the streamed agent response → read the
+   `catalogId` inside its `createSurface`. Also inspect the **request** GE sends the agent — it may
+   advertise supported catalogs (client capabilities). Whatever GE emits is ground truth.
+2. **Log it from our own agent (Cloud Logging).** Add a diagnostic callback that dumps the incoming
+   A2A request + metadata to stdout; deploy; open in GE; read GCP → Logging. If GE advertises
+   supported catalogs during negotiation, the material id shows there.
+3. **Agent Garden / GE-provided A2UI sample** source, or **GE support / Admin console**.
+- **Once found:** swap `CATALOG_BASIC` in `concierge.py` for the material id and switch component
+  names (`Button`→`MaterialButton`, `ChoicePicker`→`MaterialSelect`, etc.). Unlocks real dropdown/
+  filterable, per-component colour, background, MaterialTable, expansion panels.
   **Not a blocker:** the basic catalog already covers the concierge (ChoicePicker, Slider,
   DateTimeInput, Tabs, Modal, List, Card, CheckBox, TextField, Button+variant) + v0.9 wins
   (flat format, `formatString`, `checks`, List templates).

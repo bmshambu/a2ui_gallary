@@ -26,6 +26,15 @@ THEME_COLORS = {
     "berry": "#ae3ec9", "slate": "#495057",
 }
 
+# Layout alignment — the Column cross-axis (`align`) applied to every step's content.
+# "justify" maps to A2UI's `stretch` (children fill the width = justified).
+ALIGNMENTS = [
+    {"label": "Left", "value": "start"},
+    {"label": "Center", "value": "center"},
+    {"label": "Justify", "value": "stretch"},
+]
+ALIGN_VALUES = {a["value"] for a in ALIGNMENTS}
+
 DIETARY = [
     {"label": "Vegetarian", "value": "vegetarian"},
     {"label": "Vegan", "value": "vegan"},

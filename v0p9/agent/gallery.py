@@ -6,7 +6,7 @@ gallery, ported to v0.9. Reuses the concierge's v0.9 builder helpers.
 """
 from . import data
 from .concierge import (
-    _button, _card, _checkbox, _choice, _col, _datetime, _divider, _image,
+    _align, _button, _card, _checkbox, _choice, _col, _datetime, _divider, _image,
     _modal, _msgs, _row, _slider, _surface, _tabs, _text, _textfield,
 )
 
@@ -32,7 +32,7 @@ def gallery_menu_step(booking: dict) -> list[dict]:
     children = ["title", "sub"] + btn_ids + ["div", "exit"]
     comps = [
         _card("root", "col"),
-        _col("col", children),
+        _col("col", children, align=_align(booking)),
         _text("title", "Components in this concierge", variant="h4"),
         _text("sub", "Every A2UI v0.9 component the flow uses — tap one to see it on its own.", variant="body"),
     ]
@@ -49,7 +49,7 @@ def component_demo_step(key: str, booking: dict) -> list[dict]:
     children = ["title", "div"] + body_children + ["nav"]
     comps = [
         _card("root", "col"),
-        _col("col", children),
+        _col("col", children, align=_align(booking)),
         _text("title", _LABELS.get(key, key), variant="h4"),
         _divider("div"),
     ] + body

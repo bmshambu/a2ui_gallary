@@ -147,7 +147,7 @@ class TestCallback:
         _append_step(_ctx(state, None), resp)
         assert state["step"] == "theme"
         assert any("createSurface" in m for m in _a2ui(resp))
-        assert "theme" in resp.content.parts[0].text.lower()
+        assert "design" in resp.content.parts[0].text.lower()
 
     def test_apply_theme_advances_to_preferences(self):
         state = {"step": "theme", "booking": dict(DEFAULT_BOOKING)}
@@ -242,6 +242,25 @@ class TestThemeAndExtras:
         assert comps["theme"]["component"] == "ChoicePicker"
         assert comps["theme"]["variant"] == "mutuallyExclusive"
         assert comps["apply"]["action"]["event"]["name"] == "set_theme"
+
+    def test_design_step_has_alignment_picker(self):
+        comps = {c["id"]: c for c in self._comps(concierge.theme_step(DEFAULT_BOOKING))}
+        assert comps["align"]["component"] == "ChoicePicker"
+        ev = comps["apply"]["action"]["event"]["context"]
+        assert ev["theme"] == {"path": "/theme_sel"} and ev["align"] == {"path": "/align_sel"}
+
+    def test_set_theme_stores_alignment(self):
+        step, b = advance({"step": "theme", "booking": dict(DEFAULT_BOOKING)},
+                          {"name": "set_theme", "context": {"theme": ["ocean"], "align": ["center"]}})
+        assert step == "preferences" and b["align"] == "center"
+
+    def test_alignment_applied_to_every_step_root_col(self):
+        b = {**DEFAULT_BOOKING, "align": "center", "restaurant_id": "bella-italia"}
+        for msgs in (concierge.preferences_step(b), concierge.results_step({**b, "budget": 100}),
+                     concierge.detail_step(b), concierge.reservation_step(b),
+                     concierge.confirmation_step(b)):
+            col = next(c for c in self._comps(msgs) if c["id"] == "col")
+            assert col["align"] == "center"
 
     def test_preferences_has_no_theme_picker(self):
         comps = {c["id"]: c for c in self._comps(concierge.preferences_step(DEFAULT_BOOKING))}
