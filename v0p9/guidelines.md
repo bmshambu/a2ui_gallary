@@ -221,9 +221,12 @@ DateTimeInput, Divider, Icon, Image, List, Modal, Row, Slider, Tabs, Text, TextF
 - ✅ **Spec supports Image/Video/AudioPlayer** in the basic catalog. `Image`: `url`, `description`,
   `fit` (contain/cover/fill/none/scaleDown), `variant` (icon/avatar/smallFeature/mediumFeature/
   largeFeature/header) — richer than v0.8.
-- 🔄 **GE render test in progress** — probe now includes an `Image` with an external Google-hosted
-  URL (`gstatic`). v0.8 hard-500'd on external images; testing whether v0.9 lifts that. **Update
-  with the verdict.**
+- ✅ **v0.9 RENDERS external images — the v0.8 block is LIFTED.** 🎉 An `Image` with an external
+  Google-hosted URL (`https://www.gstatic.com/webp/gallery/1.jpg`, `fit: cover`,
+  `variant: largeFeature`) rendered cleanly in the GE card. In v0.8 the same external image
+  hard-500'd; **in v0.9 it just works.** This is a genuine capability gain — the concierge can now
+  show restaurant photos. (Tested a Google-hosted host; if a specific host misbehaves, try another,
+  but external images are viable in v0.9.)
 
 ### Still open
 - **The Material catalog's `catalogId` URL** — only needed for the *extra* Material styling/components
