@@ -25,8 +25,32 @@ def _surface(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _apply_density(components: list[dict], gap: int) -> list[dict]:
+    """Inject `gap` blank spacer lines between the root Column's children (id 'col').
+    Basic catalog has no line-height/gap, so density = spacer count between rows."""
+    spacers: list[dict] = []
+    out: list[dict] = []
+    n = 0
+    for c in components:
+        if c.get("id") == "col" and c.get("component") == "Column":
+            densed: list[str] = []
+            for i, kid in enumerate(c.get("children", [])):
+                if i:
+                    for _ in range(gap):
+                        n += 1
+                        sid = f"dsp_{n}"
+                        spacers.append(_spacer(sid))
+                        densed.append(sid)
+                densed.append(kid)
+            c = {**c, "children": densed}
+        out.append(c)
+    return out + spacers
+
+
 def _msgs(surface_id: str, components: list[dict], data_model: dict | None,
-          theme: str | None = None) -> list[dict]:
+          theme: str | None = None, density_gap: int = 0) -> list[dict]:
+    if density_gap:
+        components = _apply_density(components, density_gap)
     create = {"surfaceId": surface_id, "catalogId": CATALOG_BASIC, "sendDataModel": False}
     if theme:  # a hex like "#e8590c" — brands primary buttons / active borders / slider tracks.
         # Only primaryColor is honored on the basic catalog. Undocumented theme keys
@@ -145,6 +169,11 @@ def _align(booking: dict) -> str:
     return a if a in data.ALIGN_VALUES else "stretch"
 
 
+def _density(booking: dict) -> int:
+    """The user's chosen text density → number of spacer lines between rows (0 default)."""
+    return data.DENSITY_GAP.get((booking or {}).get("density"), 0)
+
+
 def _spaced(children: list[str], comps_out: list[dict], prefix: str) -> list[str]:
     """Interleave a `_spacer` between each id in `children` (loosens vertical rhythm)."""
     out: list[str] = []
@@ -166,23 +195,27 @@ def theme_step(booking: dict) -> list[dict]:
     (confirmed in GE: theme.primaryColor repaints buttons/borders/sliders).
     """
     sid = _surface("theme")
-    children = ["title", "sub", "theme", "align", "apply"]
+    children = ["title", "sub", "theme", "align", "density", "apply"]
     components = [
         _card("root", "col"),
         _col("col", children, align=_align(booking)),
         _text("title", "Design preference", variant="h4"),
-        _text("sub", "Pick a colour and a layout — they'll apply across the whole concierge.",
+        _text("sub", "Pick a colour, a layout, and a text density — they'll apply across the whole concierge.",
               variant="body"),
         _choice("theme", "/theme_sel", data.THEMES, label="Colour theme",
                 variant="mutuallyExclusive", display="chips"),
         _choice("align", "/align_sel", data.ALIGNMENTS, label="Layout alignment",
                 variant="mutuallyExclusive", display="chips"),
+        _choice("density", "/density_sel", data.DENSITIES, label="Text density",
+                variant="mutuallyExclusive", display="chips"),
     ]
     components += _button("apply", "Apply", "set_theme",
-                          {"theme": {"path": "/theme_sel"}, "align": {"path": "/align_sel"}},
+                          {"theme": {"path": "/theme_sel"}, "align": {"path": "/align_sel"},
+                           "density": {"path": "/density_sel"}},
                           variant="primary")
-    data_model = {"theme_sel": booking.get("theme_sel", []), "align_sel": booking.get("align_sel", [])}
-    return _msgs(sid, components, data_model, theme=booking.get("theme"))
+    data_model = {"theme_sel": booking.get("theme_sel", []), "align_sel": booking.get("align_sel", []),
+                  "density_sel": booking.get("density_sel", [])}
+    return _msgs(sid, components, data_model, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── Step 1: Preferences ──────────────────────────────────────────────────────
@@ -223,7 +256,7 @@ def preferences_step(booking: dict) -> list[dict]:
         "open_now": booking.get("open_now", False),
         "when": booking.get("when", ""),
     }
-    return _msgs(sid, components, data_model, theme=booking.get("theme"))
+    return _msgs(sid, components, data_model, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── Step 2: Results — a photo card per match with a Select button ────────────
@@ -242,7 +275,7 @@ def results_step(booking: dict) -> list[dict]:
         children += ["empty", "back"]
         components.append(_text("empty", "No restaurants match those filters — widen your search.", variant="body"))
         components += _button("back", "Adjust search", "edit_preferences", variant="borderless")
-        return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"))
+        return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"), density_gap=_density(booking))
 
     children.append("summary")
     components.append(_text("summary", f"{len(matches)} match — pick one to see details.", variant="body"))
@@ -264,7 +297,7 @@ def results_step(booking: dict) -> list[dict]:
 
     children.append("back")
     components += _button("back", "← Adjust search", "edit_preferences", variant="borderless")
-    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"))
+    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, None, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── Step 3: Detail — Tabs (Overview w/ photo · Menu · Reviews+modal · Location) ─
@@ -276,7 +309,7 @@ def detail_step(booking: dict) -> list[dict]:
         comps = [_card("root", "col"), _col("col", ["oops", "back"], align=_align(booking)),
                  _text("oops", "That restaurant is no longer available.", variant="body")]
         comps += _button("back", "← Back to results", "back_to_results", variant="borderless")
-        return _msgs(sid, comps, None, theme=booking.get("theme"))
+        return _msgs(sid, comps, None, theme=booking.get("theme"), density_gap=_density(booking))
 
     components = [
         _card("root", "col"),
@@ -294,11 +327,24 @@ def detail_step(booking: dict) -> list[dict]:
         _text("ov_stats", f"★ {r['rating']} · ~${r['avg_price']}/person · {r['seats']} seats free", variant="body"),
     ]
 
-    # Menu tab — one line per dish
-    menu_ids = [f"dish_{i}" for i in range(len(r["menu"]))]
-    components.append(_col("t_menu", menu_ids))
+    # Menu tab — a 2-column table (Dish | Price). Basic catalog has no Table, so each
+    # row is a Row with justify:spaceBetween (name left, price right — confirmed to align).
+    menu_children = ["menu_hdr", "menu_hdiv"]
+    components += [
+        _row("menu_hdr", ["menu_hd", "menu_hp"], justify="spaceBetween"),
+        _text("menu_hd", "Dish", variant="caption"),
+        _text("menu_hp", "Price", variant="caption"),
+        _divider("menu_hdiv"),
+    ]
     for i, dish in enumerate(r["menu"]):
-        components.append(_text(f"dish_{i}", f"**{dish['name']}** — ${dish['price']:.2f}", variant="body"))
+        rid, nid, pid = f"mrow_{i}", f"mname_{i}", f"mprice_{i}"
+        menu_children.append(rid)
+        components += [
+            _row(rid, [nid, pid], justify="spaceBetween"),
+            _text(nid, dish["name"], variant="body"),
+            _text(pid, f"${dish['price']:.2f}", variant="body"),
+        ]
+    components.append(_col("t_menu", menu_children))
 
     # Reviews tab — quotes + a Modal listing the review sources
     rev_ids = [f"rev_{i}" for i in range(len(r["reviews"]))]
@@ -335,7 +381,7 @@ def detail_step(booking: dict) -> list[dict]:
     components.append(_row("actions", ["reserve", "back"], justify="spaceBetween"))
     components += _button("reserve", "Reserve a table", "start_reservation", variant="primary")
     components += _button("back", "← Back to results", "back_to_results", variant="borderless")
-    return _msgs(sid, components, None, theme=booking.get("theme"))
+    return _msgs(sid, components, None, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── Step 4: Reservation — form (server-validated in the callback) ────────────
@@ -371,7 +417,7 @@ def reservation_step(booking: dict) -> list[dict]:
         "party_size": booking.get("party_size", 2),
         "res_when": booking.get("res_when") or booking.get("when", ""),
     }
-    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, data_model, theme=booking.get("theme"))
+    return _msgs(sid, [_card("root", "col"), _col("col", children, align=_align(booking))] + components, data_model, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── Step 5: Confirmation ─────────────────────────────────────────────────────
@@ -391,7 +437,7 @@ def confirmation_step(booking: dict) -> list[dict]:
         _divider("div"),
     ] + line_comps
     components += _button("new", "Start a new search", "new_search", variant="borderless")
-    return _msgs(sid, components, None, theme=booking.get("theme"))
+    return _msgs(sid, components, None, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 def _confirmation_lines(booking: dict) -> list[str]:
@@ -449,5 +495,8 @@ def action_echo(action: dict, booking: dict) -> str | None:
         if asel:
             labels = {a["value"]: a["label"] for a in data.ALIGNMENTS}
             parts.append(labels.get(asel[0], asel[0]))
+        dsel = booking.get("density_sel") or []
+        if dsel:
+            parts.append(dsel[0].title())
         return "Design · " + " · ".join(parts) if parts else None
     return _ACTION_LABELS.get(name)

@@ -6,8 +6,8 @@ gallery, ported to v0.9. Reuses the concierge's v0.9 builder helpers.
 """
 from . import data
 from .concierge import (
-    _align, _button, _card, _checkbox, _choice, _col, _datetime, _divider, _image,
-    _modal, _msgs, _row, _slider, _surface, _tabs, _text, _textfield,
+    _align, _button, _card, _checkbox, _choice, _col, _datetime, _density, _divider,
+    _image, _modal, _msgs, _row, _slider, _surface, _tabs, _text, _textfield,
 )
 
 # (key, label) — components the concierge flow actually uses.
@@ -40,7 +40,7 @@ def gallery_menu_step(booking: dict) -> list[dict]:
         comps += _button(f"c_{k}", label, "show_component", {"component": k}, variant="borderless")
     comps.append(_divider("div"))
     comps += _button("exit", "← Back to booking", "exit_gallery", variant="primary")
-    return _msgs(sid, comps, None, theme=booking.get("theme"))
+    return _msgs(sid, comps, None, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 def component_demo_step(key: str, booking: dict) -> list[dict]:
@@ -56,7 +56,7 @@ def component_demo_step(key: str, booking: dict) -> list[dict]:
     comps.append(_row("nav", ["back", "exit"], justify="spaceBetween"))
     comps += _button("back", "← All components", "back_to_gallery", variant="borderless")
     comps += _button("exit", "Back to booking", "exit_gallery", variant="borderless")
-    return _msgs(sid, comps, data_model, theme=booking.get("theme"))
+    return _msgs(sid, comps, data_model, theme=booking.get("theme"), density_gap=_density(booking))
 
 
 # ── isolated demos: (children_ids, components, data_model) ────────────────────

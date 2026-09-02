@@ -106,6 +106,7 @@ DEFAULT_BOOKING = {
     "res_name": "", "res_contact": "", "party_size": 2, "res_when": "", "_error": None,
     "theme": None, "theme_sel": [], "demo_component": "",
     "align": "stretch", "align_sel": [],
+    "density": "compact", "density_sel": [],
 }
 
 STEP_BUILDERS = {
@@ -121,7 +122,7 @@ STEP_BUILDERS = {
 }
 
 STEP_TEXT = {
-    "theme": "👋 Welcome to the Concierge (v0.9). First, set your **design preference** — colour + layout — and tap **Apply**.",
+    "theme": "👋 Welcome to the Concierge (v0.9). First, set your **design preference** — colour, layout & density — and tap **Apply**.",
     "preferences": "🎨 Design applied. Now set your preferences and tap **Find tables**.",
     "results": "Here's what matched your search.",
     "detail": "Explore the tabs, then reserve when you're ready.",
@@ -187,7 +188,8 @@ def advance(state, action) -> tuple[str, dict]:
     elif name == "new_search":
         # fresh search but keep the design preference the user already chose (no re-picking)
         keep = {"theme": booking.get("theme"), "theme_sel": booking.get("theme_sel", []),
-                "align": booking.get("align", "stretch"), "align_sel": booking.get("align_sel", [])}
+                "align": booking.get("align", "stretch"), "align_sel": booking.get("align_sel", []),
+                "density": booking.get("density", "compact"), "density_sel": booking.get("density_sel", [])}
         booking = {**DEFAULT_BOOKING, **keep}
         step = "preferences"
     elif name == "set_theme":  # Design preference: colour + layout alignment
@@ -200,6 +202,11 @@ def advance(state, action) -> tuple[str, dict]:
         if akey in data.ALIGN_VALUES:
             booking["align"] = akey
         booking["align_sel"] = asel if isinstance(asel, list) else ([asel] if asel else [])
+        dsel = ctx.get("density")
+        dkey = dsel[0] if isinstance(dsel, list) and dsel else (dsel if isinstance(dsel, str) else None)
+        if dkey in data.DENSITY_VALUES:
+            booking["density"] = dkey
+        booking["density_sel"] = dsel if isinstance(dsel, list) else ([dsel] if dsel else [])
         # design preference is the gate → once applied, move on to Find a table
         step = "preferences"
     elif name == "show_component":

@@ -322,8 +322,23 @@ The single **Apply** button fires `set_theme` carrying both `{theme, align}` (co
 Center". Pattern worth reusing: **one gated "preferences" surface can carry several global display
 choices at once** (colour, density, alignment) — each a ChoicePicker, all applied on one Apply.
 > Note: `align` is applied to each step's **root** Column only (not nested cards/tab bodies), so
-> inputs inside tabs keep their normal layout. Whether `stretch` vs `start` visibly moves the
-> Slider's built-in value label is renderer-dependent — pending the deploy screenshot.
+> inputs inside tabs keep their normal layout.
+
+**Third global lever — Text density** (added 2026-09-02). Since basic Text has no line-height/
+font-size, "density" = **how many blank spacer lines sit between a surface's rows**:
+`Compact→0`, `Comfortable→1`, `Spacious→2` (`data.DENSITIES` / `DENSITY_GAP`). A third
+`mutuallyExclusive` ChoicePicker on the Design step; the Apply button carries `{theme, align,
+density}`. Implemented centrally in `_msgs(..., density_gap=_density(booking))` → `_apply_density()`
+finds the root Column (id `col`) and interleaves N `_spacer`s (`\xa0` Text) between its children,
+appending the spacer components. One post-processing hook covers **every** step. Default `compact`
+(gap 0) keeps the confirmed layout unchanged unless the user opts into more air. Pending GE screenshot.
+
+**✅ CONFIRMED in GE (2026-09-02).** `align` on the root Column visibly repositions the whole step:
+`Left` hugs left, `Center` centers every child (title, chips, sliders, checkboxes, button). Bonus —
+non-`stretch` align makes the **Slider shrink to content width, so its built-in value label sits
+right next to the track** (this fixes the "value floats far right" gap seen under `stretch`).
+So on the basic catalog, layout alignment IS a real, user-selectable global lever alongside
+`theme.primaryColor`. Screenshots: Berry·Left and Berry·Center.
 
 ### Theme-first flow (theme as the mandatory first interaction)
 The user wanted theme selection to gate the whole flow — for **any** opening question, show the
@@ -386,6 +401,34 @@ are only validators/formatters (`required`, `email`, `formatCurrency`, `openUrl`
 none advance a server step. **Mitigation (unchanged from v0.8):** own the agent's LEFT-side reply and
 prepend a readable echo via `action_echo()` (e.g. "Theme · Sunset"). If the bubble is suppressible at
 all, it'd be a GE **app/agent config** setting, not an A2UI payload field.
+
+### Dropdown in v0.9? — no native one (2026-09-02)
+- v0.9 basic `ChoicePicker.displayStyle` = `{checkbox, chips}` **only** (schema closed) — **no
+  collapsed dropdown**. `filterable` is ignored (see above). A real dropdown = v0.8's
+  `MultipleChoice`, or the Material catalog's `MaterialSelect`.
+- **Hard constraint:** one surface renders against **one version/catalog** — you **cannot** put a
+  v0.8 `MultipleChoice` inside a v0.9 `createSurface`. To use the v0.8 dropdown, the **whole step
+  card** would have to be a v0.8 surface (surfaceUpdate/beginRendering, nested format), and its
+  clicks come back as v0.8 `userAction`. Whether GE even renders a v0.8 surface inside a v0.9 chat
+  is unconfirmed. Not pursued — if a dropdown is needed, the clean path is Material `MaterialSelect`.
+
+### Faking a table on the basic catalog (2026-09-02)
+Basic has **no Table** (`MaterialTable` is Material-only). Two ways to build one from layout primitives:
+- **2-column table (label ↔ value) — RELIABLE.** A `Column` of `Row`s, each `Row` with
+  `justify: "spaceBetween"` → first cell hugs left, second hugs right. Columns align because every
+  row splits the same width. Add a header Row (caption Texts) + a `Divider`. Confirmed working — used
+  for the concierge **Menu tab** (Dish ↔ Price) and ideal for key/value receipts.
+- **3+ column grid — RISKY.** Needs `weight` on each cell for columns to line up; `weight` alignment
+  is not GE-confirmed (flagged unverified since v0.8) and may render ragged. For real multi-column
+  tables, use the Material catalog's `MaterialTable`.
+```
+Column[
+  Row(justify=spaceBetween)[ Text("Dish",caption),  Text("Price",caption) ],
+  Divider,
+  Row(justify=spaceBetween)[ Text("Margherita",body), Text("$14.00",body) ],
+  …
+]
+```
 
 ### Material catalog `catalogId` — HUNT RESULTS (2026-09-01)
 Dug hard; the exact string is **not published anywhere public**:

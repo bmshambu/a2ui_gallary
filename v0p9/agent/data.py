@@ -35,6 +35,16 @@ ALIGNMENTS = [
 ]
 ALIGN_VALUES = {a["value"] for a in ALIGNMENTS}
 
+# Text density — basic catalog has no line-height/font-size, so "density" = how many
+# blank spacer lines sit between a surface's content rows (0 = tight, 2 = airy).
+DENSITIES = [
+    {"label": "Compact", "value": "compact"},
+    {"label": "Comfortable", "value": "comfortable"},
+    {"label": "Spacious", "value": "spacious"},
+]
+DENSITY_GAP = {"compact": 0, "comfortable": 1, "spacious": 2}
+DENSITY_VALUES = set(DENSITY_GAP)
+
 DIETARY = [
     {"label": "Vegetarian", "value": "vegetarian"},
     {"label": "Vegan", "value": "vegan"},

@@ -254,6 +254,30 @@ class TestThemeAndExtras:
                           {"name": "set_theme", "context": {"theme": ["ocean"], "align": ["center"]}})
         assert step == "preferences" and b["align"] == "center"
 
+    def test_design_step_has_density_picker(self):
+        comps = {c["id"]: c for c in self._comps(concierge.theme_step(DEFAULT_BOOKING))}
+        assert comps["density"]["component"] == "ChoicePicker"
+        assert comps["apply"]["action"]["event"]["context"]["density"] == {"path": "/density_sel"}
+
+    def test_set_theme_stores_density(self):
+        step, b = advance({"step": "theme", "booking": dict(DEFAULT_BOOKING)},
+                          {"name": "set_theme", "context": {"density": ["spacious"]}})
+        assert step == "preferences" and b["density"] == "spacious"
+
+    def _root_children(self, msgs):
+        return next(c for c in self._comps(msgs) if c["id"] == "col")["children"]
+
+    def test_density_injects_spacers_between_root_children(self):
+        base_children = self._root_children(concierge.preferences_step({**DEFAULT_BOOKING, "density": "compact"}))
+        assert not any(k.startswith("dsp_") for k in base_children)  # compact = no spacers
+
+        spacious = concierge.preferences_step({**DEFAULT_BOOKING, "density": "spacious"})
+        sp_children = self._root_children(spacious)
+        n_orig = len(base_children)
+        # spacious = 2 spacer lines between each of the original children
+        assert sum(1 for k in sp_children if k.startswith("dsp_")) == 2 * (n_orig - 1)
+        assert any(c["id"].startswith("dsp_") for c in self._comps(spacious))
+
     def test_alignment_applied_to_every_step_root_col(self):
         b = {**DEFAULT_BOOKING, "align": "center", "restaurant_id": "bella-italia"}
         for msgs in (concierge.preferences_step(b), concierge.results_step({**b, "budget": 100}),
